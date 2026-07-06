@@ -7,6 +7,7 @@ import ActiveTrades from "./pages/ActiveTrades";
 import History from "./pages/History";
 import Pnl from "./pages/Pnl";
 import Backtest from "./pages/Backtest";
+import Simulacion from "./pages/Simulacion";
 
 const tabs = [
   { to: "/", label: "Dashboard" },
@@ -14,6 +15,7 @@ const tabs = [
   { to: "/historico", label: "Histórico" },
   { to: "/pnl", label: "PnL" },
   { to: "/backtest", label: "Backtest" },
+  { to: "/simulacion", label: "Simulación" },
 ];
 
 export default function App() {
@@ -85,6 +87,7 @@ export default function App() {
           <Route path="/historico" element={<History />} />
           <Route path="/pnl" element={<Pnl />} />
           <Route path="/backtest" element={<Backtest />} />
+          <Route path="/simulacion" element={<Simulacion />} />
         </Routes>
       </main>
     </div>

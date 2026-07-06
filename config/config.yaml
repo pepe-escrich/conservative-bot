@@ -72,6 +72,10 @@ leverage: 3
 capital_inicial: 1000          # USDT, para paper y backtest
 risk_per_trade_pct: 1.86       # % del equity que se pierde si salta el SL inicial
 
+sizing:
+  mode: risk                   # 'risk' (por riesgo al SL) o 'capital_fraction' (% fijo del capital como margen)
+  capital_fraction_pct: 10     # solo para capital_fraction: % del capital al inicio del día por trade
+
 risk_reward: 4.18              # TP a 4.18R
 
 stop:

@@ -68,6 +68,13 @@ class PaperConfig(BaseModel):
     poll_seconds: int = 15
 
 
+class SizingConfig(BaseModel):
+    # 'risk': el tamaño se calcula para perder risk_per_trade_pct% del equity si salta el SL.
+    # 'capital_fraction': cada trade usa un % fijo del capital (al inicio del día) como margen.
+    mode: Literal["risk", "capital_fraction"] = "risk"
+    capital_fraction_pct: float = 10.0
+
+
 class BotConfig(BaseModel):
     exchange: str = "okx"
     universe: list[str] = Field(default_factory=list)
@@ -77,6 +84,7 @@ class BotConfig(BaseModel):
     leverage: float = 10
     capital_inicial: float = 1000
     risk_per_trade_pct: float = 1.0
+    sizing: SizingConfig = SizingConfig()
     risk_reward: float = 3
     stop: StopConfig = StopConfig()
     steps: StepsConfig = StepsConfig()

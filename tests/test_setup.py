@@ -56,3 +56,21 @@ def test_short_niveles_invertidos(config):
 def test_sin_datos_suficientes_devuelve_none(config):
     df = flat_df(n=5)
     assert build_trade("X", LONG, 0, 100.0, df, 1000.0, 1000.0, config) is None
+
+
+def test_sizing_capital_fraction(config):
+    """Modo simulación: cada trade usa un % fijo del capital como margen."""
+    config.sizing.mode = "capital_fraction"
+    config.sizing.capital_fraction_pct = 10
+    df = flat_df(price=100.0, spread=1.0)
+    trade = build_trade(
+        "BTC/USDT:USDT", LONG, 0, 100.0, df, equity=100.0, available_margin=100.0, config=config
+    )
+    assert trade is not None
+    assert trade.margin == pytest.approx(10.0)  # 10% de 100 $
+    assert trade.size * trade.entry_price == pytest.approx(10.0 * config.leverage)
+    # respeta el margen disponible si es menor que la fracción
+    trade2 = build_trade(
+        "BTC/USDT:USDT", LONG, 0, 100.0, df, equity=100.0, available_margin=4.0, config=config
+    )
+    assert trade2.margin == pytest.approx(4.0)

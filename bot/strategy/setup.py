@@ -45,13 +45,19 @@ def build_trade(
     if initial_sl <= 0:
         return None
 
-    risk_amount = equity * config.risk_per_trade_pct / 100
-    size = risk_amount / sl_distance
-    margin = size * entry / config.leverage
-    if margin > available_margin:
-        # no hay margen libre suficiente: reducir la posición
-        margin = available_margin
+    if config.sizing.mode == "capital_fraction":
+        # margen = % fijo del capital al inicio del día
+        margin = min(equity * config.sizing.capital_fraction_pct / 100, available_margin)
         size = margin * config.leverage / entry
+    else:
+        # tamaño por riesgo: perder risk_per_trade_pct% del equity si salta el SL
+        risk_amount = equity * config.risk_per_trade_pct / 100
+        size = risk_amount / sl_distance
+        margin = size * entry / config.leverage
+        if margin > available_margin:
+            # no hay margen libre suficiente: reducir la posición
+            margin = available_margin
+            size = margin * config.leverage / entry
     if margin <= 0 or size * entry < 1:  # notional mínimo de 1 USDT
         return None
 
