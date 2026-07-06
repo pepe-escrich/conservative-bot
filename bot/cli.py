@@ -34,6 +34,53 @@ def cmd_fetch(args) -> None:
     print("Hecho.")
 
 
+# stablecoins y variantes wrapped/staked que no queremos tradear aunque estén en el top
+UNIVERSE_EXCLUDE = {
+    "USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "PYUSD", "USDS", "USD1", "BUSD", "USDD",
+    "WBTC", "WETH", "STETH", "WSTETH", "WEETH", "WBETH", "CBBTC", "CBETH", "RETH", "METH",
+    "RSETH", "TBTC", "LSETH", "SOLVBTC", "EZETH", "BGB", "LEO", "OKB", "CRO", "GT", "KCS",
+}
+
+
+def cmd_universe(args) -> None:
+    """Genera el catálogo: top N por capitalización (CoinGecko) ∩ perpetuos USDT del exchange."""
+    import requests
+
+    config = load_config(args.config)
+    exchange = Exchange(config.exchange)
+    markets = exchange.client.load_markets()
+    swaps = {
+        m["base"]
+        for m in markets.values()
+        if m.get("swap") and m.get("quote") == "USDT" and m.get("settle") == "USDT" and m.get("active")
+    }
+
+    resp = requests.get(
+        "https://api.coingecko.com/api/v3/coins/markets",
+        params={"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": 1},
+        headers={"User-Agent": "conservative-bot/0.1"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    coins = resp.json()
+
+    selected: list[str] = []
+    for coin in coins:
+        sym = coin["symbol"].upper()
+        name = (coin.get("name") or "").lower()
+        if sym in UNIVERSE_EXCLUDE or "wrapped" in name or "staked" in name or "bridged" in name:
+            continue
+        if sym in swaps and f"{sym}/USDT:USDT" not in selected:
+            selected.append(f"{sym}/USDT:USDT")
+        if len(selected) >= args.top:
+            break
+
+    print(f"# top {len(selected)} por capitalización con perpetuo USDT en {config.exchange}")
+    print("universe:")
+    for s in selected:
+        print(f"  - {s}")
+
+
 def cmd_backtest(args) -> None:
     from bot.backtest.engine import run_backtest
 
@@ -60,6 +107,11 @@ def main(argv: list[str] | None = None) -> None:
     p_fetch.add_argument("--symbols", help="lista separada por comas (por defecto: universe del config)")
     p_fetch.add_argument("--config", default=None)
     p_fetch.set_defaults(func=cmd_fetch)
+
+    p_uni = sub.add_parser("universe", help="genera el catálogo top-N por capitalización (CoinGecko ∩ exchange)")
+    p_uni.add_argument("--top", type=int, default=50)
+    p_uni.add_argument("--config", default=None)
+    p_uni.set_defaults(func=cmd_universe)
 
     p_bt = sub.add_parser("backtest", help="ejecuta un backtest sobre la cache local")
     p_bt.add_argument("--from", dest="date_from", required=True, help="YYYY-MM-DD")
