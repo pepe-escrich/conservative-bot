@@ -5,7 +5,7 @@ import { Card, Empty, SideBadge, Td, Th } from "../components/ui";
 
 export default function ActiveTrades() {
   const { source } = useSource();
-  const params = `${sourceParams(source)}&status=open${source.kind === "paper" ? "&mode=paper" : ""}`;
+  const params = `${sourceParams(source)}&status=open`;
 
   const { data: trades } = useQuery({
     queryKey: ["open-trades", params],

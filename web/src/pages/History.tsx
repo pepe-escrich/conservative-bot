@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, fmtDate, fmtPrice, fmtUsd, pnlColor, sourceParams, Trade } from "../api";
 import { useSource } from "../state";
@@ -40,7 +40,7 @@ export default function History() {
   const [symbol, setSymbol] = useState("");
   const [expanded, setExpanded] = useState<number | null>(null);
 
-  const params = `${sourceParams(source)}${source.kind === "paper" ? "&mode=paper" : ""}&status=closed${
+  const params = `${sourceParams(source)}&status=closed${
     symbol ? `&symbol=${encodeURIComponent(symbol)}` : ""
   }&limit=500`;
 
@@ -81,9 +81,8 @@ export default function History() {
               {trades.map((t) => {
                 const hours = t.close_time ? (t.close_time - t.entry_time) / 3_600_000 : null;
                 return (
-                  <>
+                  <Fragment key={t.id}>
                     <tr
-                      key={t.id}
                       className="border-b border-slate-800/60 hover:bg-slate-800/30 cursor-pointer"
                       onClick={() => setExpanded(expanded === t.id ? null : t.id)}
                     >
@@ -100,11 +99,11 @@ export default function History() {
                       </Td>
                     </tr>
                     {expanded === t.id && (
-                      <tr key={`${t.id}-detail`}>
+                      <tr>
                         <td colSpan={9}><FillsDetail trade={t} /></td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
