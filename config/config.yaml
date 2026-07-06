@@ -1,0 +1,70 @@
+# Configuración del bot. Todos los parámetros operativos viven aquí.
+
+exchange: okx                  # id de ccxt: okx, bingx, binance...
+
+# Catálogo de tokens (perpetuos USDT de OKX, formato ccxt)
+universe:
+  - BTC/USDT:USDT
+  - ETH/USDT:USDT
+  - SOL/USDT:USDT
+  - XRP/USDT:USDT
+  - DOGE/USDT:USDT
+  - ADA/USDT:USDT
+  - AVAX/USDT:USDT
+  - LINK/USDT:USDT
+  - DOT/USDT:USDT
+  - LTC/USDT:USDT
+  - BNB/USDT:USDT
+  - TON/USDT:USDT
+  - NEAR/USDT:USDT
+  - APT/USDT:USDT
+  - OP/USDT:USDT
+
+schedule:
+  time: "07:00"                # hora local de lanzamiento de los trades diarios
+  timezone: Europe/Madrid
+
+trades_per_day: 3              # nº de trades que se abren cada día
+min_score: 0.3                 # puntuación mínima (|score|) para considerar un token
+
+leverage: 10
+capital_inicial: 1000          # USDT, para paper y backtest
+risk_per_trade_pct: 1.0        # % del equity que se pierde si salta el SL inicial
+
+risk_reward: 3                 # setup 1:3 -> TP a 3R
+
+stop:
+  atr_mult: 1.5                # distancia del SL en múltiplos de ATR
+  atr_period: 14
+
+steps:                         # gestión por escalones de beneficio
+  basis: margin_pnl            # 'margin_pnl' (% PnL sobre margen) o 'price' (% de precio)
+  step_pct: 1.0                # tamaño del escalón
+  partial_close_pct: 50        # % de la posición restante que se cierra en cada escalón
+  trail_mode: previous_step    # 'previous_step' o 'breakeven_only'
+
+fees:
+  taker_pct: 0.05              # comisión taker por fill (% del notional)
+  slippage_pct: 0.02           # deslizamiento estimado por fill (% del precio)
+
+indicators:                    # pesos del scoring (se normalizan a suma 1)
+  ema_trend: 0.25
+  rsi: 0.15
+  macd: 0.15
+  adx: 0.10
+  bollinger: 0.10
+  frvp: 0.25
+
+timeframes:
+  signal: 1h                   # indicadores de señal
+  trend: 4h                    # contexto de tendencia
+  management: 5m               # gestión intradía de trades (backtest)
+
+frvp:
+  lookback_days: 14
+  value_area_pct: 70
+  bins: 100
+
+paper:
+  enabled: false               # si true, el runner de paper trading arranca con la API
+  poll_seconds: 15

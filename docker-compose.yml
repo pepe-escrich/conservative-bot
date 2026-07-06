@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    container_name: conservative-bot
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data                    # velas + base de datos (persistente)
+      - ./config:/app/config            # editar config.yaml sin reconstruir
+    environment:
+      - TZ=Europe/Madrid

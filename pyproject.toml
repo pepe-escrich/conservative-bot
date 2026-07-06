@@ -1,0 +1,32 @@
+[project]
+name = "conservative-bot"
+version = "0.1.0"
+description = "Bot de trading de perpetuos cripto: scoring diario, setup 1:3, gestión por escalones, backtest y paper trading"
+requires-python = ">=3.11"
+dependencies = [
+    "ccxt>=4.3",
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "pyarrow>=16.0",
+    "pydantic>=2.7",
+    "PyYAML>=6.0",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "apscheduler>=3.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = { find = { include = ["bot*", "api*"] } }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
