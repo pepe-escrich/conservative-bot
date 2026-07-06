@@ -101,3 +101,18 @@ def load_config(path: str | Path | None = None) -> BotConfig:
     with open(cfg_path) as f:
         raw = yaml.safe_load(f) or {}
     return BotConfig(**raw)
+
+
+def deep_merge(base: dict, overrides: dict) -> dict:
+    """Fusión recursiva de dicts: overrides gana; los sub-dicts se combinan."""
+    out = dict(base)
+    for k, v in overrides.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def with_overrides(config: BotConfig, overrides: dict) -> BotConfig:
+    return BotConfig(**deep_merge(config.model_dump(), overrides))

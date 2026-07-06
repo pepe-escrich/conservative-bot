@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from bot.backtest.engine import BacktestEngine
-from bot.config import BotConfig, load_config
+from bot.config import load_config, with_overrides
 
 router = APIRouter()
 
@@ -21,23 +21,12 @@ class BacktestRequest(BaseModel):
     overrides: dict = {}  # parcial, se fusiona sobre config.yaml
 
 
-def _deep_merge(base: dict, overrides: dict) -> dict:
-    out = dict(base)
-    for k, v in overrides.items():
-        if isinstance(v, dict) and isinstance(out.get(k), dict):
-            out[k] = _deep_merge(out[k], v)
-        else:
-            out[k] = v
-    return out
-
-
 @router.post("/backtests")
 def launch_backtest(request: Request, body: BacktestRequest):
     if body.date_to < body.date_from:
         raise HTTPException(400, "date_to debe ser >= date_from")
     db = request.app.state.db
-    base = load_config().model_dump()
-    config = BotConfig(**_deep_merge(base, body.overrides))
+    config = with_overrides(load_config(), body.overrides)
     run_id = db.create_run(body.date_from.isoformat(), body.date_to.isoformat(), config.model_dump())
 
     def worker():

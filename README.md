@@ -23,11 +23,19 @@ Bot de trading de perpetuos cripto con operativa diaria sencilla:
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 
+# 0. (opcional) Regenerar el catálogo: top-50 por capitalización con perpetuo en OKX
+.venv/bin/python -m bot universe --top 50   # imprime el bloque para config.yaml
+
 # 1. Descargar velas de OKX (una vez; luego actualiza incremental)
 .venv/bin/python -m bot fetch --days 120
 
 # 2. Backtest por CLI (también desde la web)
 .venv/bin/python -m bot backtest --from 2026-04-01 --to 2026-06-30
+
+# 2b. Estudio de optimización (Optuna): busca los parámetros más idóneos
+#     con validación in-sample/out-of-sample para evitar sobreajuste.
+#     Genera un informe en data/studies/ y guarda el mejor run en la web.
+.venv/bin/python -m bot optimize --from 2026-04-15 --to 2026-07-05 --trials 200
 
 # 3. Web: API + frontend
 .venv/bin/uvicorn api.main:app --port 8000        # backend

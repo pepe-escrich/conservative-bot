@@ -98,6 +98,30 @@ def cmd_backtest(args) -> None:
         print(f"  {key:26} {value}")
 
 
+def cmd_optimize(args) -> None:
+    from bot.backtest.optimize import persist_run, run_study
+
+    config = load_config(args.config)
+    result = run_study(
+        config,
+        date.fromisoformat(args.date_from),
+        date.fromisoformat(args.date_to),
+        n_trials=args.trials,
+        split=args.split,
+        seed=args.seed,
+    )
+    print(f"\nInforme: {result.report_path}")
+    print("\nConfiguración recomendada (mejor generalización OOS):")
+    import yaml as _yaml
+
+    print(_yaml.dump(result.recommended_overrides, sort_keys=False, allow_unicode=True))
+    if not args.no_persist:
+        run_id = persist_run(
+            config, result.recommended_overrides, date.fromisoformat(args.date_from), date.fromisoformat(args.date_to)
+        )
+        print(f"Backtest completo con la config recomendada guardado como run #{run_id} (visible en la web).")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="bot", description="conservative-bot CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -119,6 +143,16 @@ def main(argv: list[str] | None = None) -> None:
     p_bt.add_argument("--config", default=None)
     p_bt.add_argument("--no-persist", action="store_true", help="no guardar el run en la BD")
     p_bt.set_defaults(func=cmd_backtest)
+
+    p_opt = sub.add_parser("optimize", help="estudio Optuna: busca los parámetros óptimos con validación IS/OOS")
+    p_opt.add_argument("--from", dest="date_from", required=True, help="YYYY-MM-DD")
+    p_opt.add_argument("--to", dest="date_to", required=True, help="YYYY-MM-DD")
+    p_opt.add_argument("--trials", type=int, default=200)
+    p_opt.add_argument("--split", type=float, default=0.65, help="fracción in-sample (resto out-of-sample)")
+    p_opt.add_argument("--seed", type=int, default=42)
+    p_opt.add_argument("--config", default=None)
+    p_opt.add_argument("--no-persist", action="store_true", help="no guardar el run recomendado en la BD")
+    p_opt.set_defaults(func=cmd_optimize)
 
     args = parser.parse_args(argv)
     args.func(args)

@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.111",
     "uvicorn[standard]>=0.30",
     "apscheduler>=3.10",
+    "optuna>=3.6",
 ]
 
 [project.optional-dependencies]

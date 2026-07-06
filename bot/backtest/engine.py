@@ -49,12 +49,21 @@ class BacktestEngine:
         db: Database | None = None,
         run_id: int | None = None,
         progress_cb: Callable[[float], None] | None = None,
+        data: dict[str, dict[str, pd.DataFrame]] | None = None,
+        scores_provider: Callable[[date, set[str]], list[TokenScore]] | None = None,
+        atr_provider: Callable[[date, str], float | None] | None = None,
     ):
+        """`data`, `scores_provider` y `atr_provider` permiten inyectar velas ya
+        cargadas y señales precalculadas (los usa el optimizador para no repetir
+        el cálculo de indicadores en cada trial)."""
         self.config = config
         self.store = store or CandleStore(config.exchange)
         self.db = db
         self.run_id = run_id
         self.progress_cb = progress_cb
+        self.data = data
+        self.scores_provider = scores_provider
+        self.atr_provider = atr_provider
         self.manager = StepLadderManager(config)
 
     # ------------------------------------------------------------------
@@ -89,7 +98,7 @@ class BacktestEngine:
     def run(self, date_from: date, date_to: date) -> BacktestResult:
         cfg = self.config
         tz = ZoneInfo(cfg.schedule.timezone)
-        data = self._load_candles()
+        data = self.data if self.data is not None else self._load_candles()
         if not data:
             raise RuntimeError(
                 "No hay velas en cache. Ejecuta primero: python -m bot fetch --days N"
@@ -108,14 +117,17 @@ class BacktestEngine:
 
             # --- 1) scoring del día ---------------------------------------
             busy = {t.symbol for t in open_trades}
-            scores: list[TokenScore] = []
-            for symbol, frames in data.items():
-                signal_df = self._slice_before(frames["signal"], t0_ms, SIGNAL_LOOKBACK_BARS)
-                trend_df = self._slice_before(frames["trend"], t0_ms, TREND_LOOKBACK_BARS)
-                if len(signal_df) < 50 or len(trend_df) < 50:
-                    continue
-                ctx = SignalContext(signal_df=signal_df, trend_df=trend_df, config=cfg)
-                scores.append(score_token(symbol, ctx))
+            if self.scores_provider is not None:
+                scores = self.scores_provider(day, set(data))
+            else:
+                scores = []
+                for symbol, frames in data.items():
+                    signal_df = self._slice_before(frames["signal"], t0_ms, SIGNAL_LOOKBACK_BARS)
+                    trend_df = self._slice_before(frames["trend"], t0_ms, TREND_LOOKBACK_BARS)
+                    if len(signal_df) < 50 or len(trend_df) < 50:
+                        continue
+                    ctx = SignalContext(signal_df=signal_df, trend_df=trend_df, config=cfg)
+                    scores.append(score_token(symbol, ctx))
 
             candidates = [s for s in rank_tokens(scores, cfg) if s.symbol not in busy]
 
@@ -128,7 +140,14 @@ class BacktestEngine:
                     continue
                 first = day_mgmt.iloc[0]
                 reserved = sum(t.margin * (t.remaining_size / t.size) for t in open_trades)
-                signal_df = self._slice_before(frames["signal"], t0_ms, SIGNAL_LOOKBACK_BARS)
+                atr_value = self.atr_provider(day, cand.symbol) if self.atr_provider else None
+                if self.atr_provider is not None and atr_value is None:
+                    continue
+                signal_df = (
+                    frames["signal"].iloc[:0]
+                    if atr_value is not None
+                    else self._slice_before(frames["signal"], t0_ms, SIGNAL_LOOKBACK_BARS)
+                )
                 trade = build_trade(
                     cand.symbol,
                     side_from_score(cand.score),
@@ -140,6 +159,7 @@ class BacktestEngine:
                     config=cfg,
                     score=cand.score,
                     mode="backtest",
+                    atr_value=atr_value,
                 )
                 if trade is None:
                     continue

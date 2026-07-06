@@ -20,18 +20,22 @@ def build_trade(
     config: BotConfig,
     score: float = 0.0,
     mode: str = "backtest",
+    atr_value: float | None = None,
 ) -> Trade | None:
     """Crea un Trade listo para gestionar, o None si no hay margen/datos suficientes.
 
     - SL a `stop.atr_mult` ATRs de la entrada; TP a `risk_reward` veces esa distancia.
     - Tamaño tal que si salta el SL inicial se pierde `risk_per_trade_pct`% del equity.
     - La entrada paga slippage y comisión taker.
+    - `atr_value` permite inyectar un ATR precalculado (optimizador); si no, se
+      calcula sobre `signal_df`.
     """
-    if len(signal_df) < config.stop.atr_period + 5:
-        return None
+    if atr_value is None:
+        if len(signal_df) < config.stop.atr_period + 5:
+            return None
+        atr_value = float(atr(signal_df, config.stop.atr_period).iloc[-1])
 
     entry = market_price * (1 + side * config.fees.slippage_pct / 100)
-    atr_value = float(atr(signal_df, config.stop.atr_period).iloc[-1])
     sl_distance = config.stop.atr_mult * atr_value
     if sl_distance <= 0:
         return None
