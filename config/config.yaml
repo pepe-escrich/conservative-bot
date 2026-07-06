@@ -60,36 +60,41 @@ schedule:
   time: "07:00"                # hora local de lanzamiento de los trades diarios
   timezone: Europe/Madrid
 
-trades_per_day: 3              # nº de trades que se abren cada día
-min_score: 0.3                 # puntuación mínima (|score|) para considerar un token
+# --- Valores optimizados por el estudio Optuna del 2026-07-06 ---------------
+# (data/studies/study_20260706_2322.md · OOS: +27.9% en 29 días, DD 6.3%, PF 1.62)
+# Los valores originales del diseño (3 trades/día, 10x, escalones de 1% de PnL
+# sobre margen, RR 1:3) perdían dinero: las comisiones se comían los escalones.
 
-leverage: 10
+trades_per_day: 2              # nº de trades que se abren cada día
+min_score: 0.166               # puntuación mínima (|score|) para considerar un token
+
+leverage: 3
 capital_inicial: 1000          # USDT, para paper y backtest
-risk_per_trade_pct: 1.0        # % del equity que se pierde si salta el SL inicial
+risk_per_trade_pct: 1.86       # % del equity que se pierde si salta el SL inicial
 
-risk_reward: 3                 # setup 1:3 -> TP a 3R
+risk_reward: 4.18              # TP a 4.18R
 
 stop:
-  atr_mult: 1.5                # distancia del SL en múltiplos de ATR
+  atr_mult: 2.99               # distancia del SL en múltiplos de ATR
   atr_period: 14
 
 steps:                         # gestión por escalones de beneficio
-  basis: margin_pnl            # 'margin_pnl' (% PnL sobre margen) o 'price' (% de precio)
-  step_pct: 1.0                # tamaño del escalón
-  partial_close_pct: 50        # % de la posición restante que se cierra en cada escalón
-  trail_mode: previous_step    # 'previous_step' o 'breakeven_only'
+  basis: price                 # 'margin_pnl' (% PnL sobre margen) o 'price' (% de precio)
+  step_pct: 5.9                # tamaño del escalón
+  partial_close_pct: 68.4      # % de la posición restante que se cierra en cada escalón
+  trail_mode: breakeven_only   # 'previous_step' o 'breakeven_only'
 
 fees:
   taker_pct: 0.05              # comisión taker por fill (% del notional)
   slippage_pct: 0.02           # deslizamiento estimado por fill (% del precio)
 
 indicators:                    # pesos del scoring (se normalizan a suma 1)
-  ema_trend: 0.25
-  rsi: 0.15
-  macd: 0.15
-  adx: 0.10
-  bollinger: 0.10
-  frvp: 0.25
+  ema_trend: 0.519
+  rsi: 0.866
+  macd: 0.975
+  adx: 0.154
+  bollinger: 0.747
+  frvp: 0.305
 
 timeframes:
   signal: 1h                   # indicadores de señal
