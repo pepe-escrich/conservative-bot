@@ -130,6 +130,7 @@ export const api = {
     get<PnlBucket[]>(`/api/pnl?${sourceParams(src)}&interval=${interval}`),
   scores: (src: Source) => get<Score[]>(`/api/scores?${sourceParams(src)}`),
   status: () => get<Status>("/api/status"),
+  profiles: () => get<Record<string, Record<string, unknown>>>("/api/profiles"),
   runs: () => get<Run[]>("/api/backtests"),
   launchBacktest: (body: { date_from: string; date_to: string; overrides: Record<string, unknown> }) =>
     send<{ run_id: number }>("POST", "/api/backtests", body),

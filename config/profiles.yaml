@@ -1,0 +1,28 @@
+# Perfiles de la pestaña Simulación: overrides que se aplican sobre config.yaml.
+# Añade los que quieras; el nombre aparece tal cual en el selector de la web.
+
+conservador: {}                # la configuración actual de config.yaml tal cual
+
+agresivo:                      # recomendada por el estudio Optuna v3 (data/studies/study_20260707_1800.md)
+  # OOS: +68.6% en 29 días, drawdown 16.0%, PF 1.63 — gana más pero sufre 2.4x más
+  trades_per_day: 4
+  min_score: 0.553
+  leverage: 5
+  risk_per_trade_pct: 1.99
+  risk_reward: 4.95
+  entry:
+    mode: market
+  stop:
+    atr_mult: 0.99
+  steps:
+    basis: price
+    step_pct: 4.54
+    partial_close_pct: 56.5
+    trail_mode: breakeven_only
+  indicators:
+    ema_trend: 0.872
+    rsi: 0.86
+    macd: 0.293
+    adx: 0.659
+    bollinger: 0.856
+    frvp: 0.129

@@ -175,6 +175,20 @@ def get_config(request: Request):
     return _config(request).model_dump()
 
 
+@router.get("/profiles")
+def get_profiles():
+    """Perfiles de simulación: nombre -> overrides sobre config.yaml."""
+    import yaml
+
+    from bot.config import PROJECT_ROOT
+
+    path = PROJECT_ROOT / "config" / "profiles.yaml"
+    if not path.exists():
+        return {"conservador": {}}
+    with open(path) as f:
+        return yaml.safe_load(f) or {"conservador": {}}
+
+
 @router.get("/status")
 def status(request: Request):
     cfg = _config(request)

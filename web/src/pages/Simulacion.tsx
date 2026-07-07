@@ -25,6 +25,9 @@ export default function Simulacion() {
   const [dateTo, setDateTo] = useState(isoDaysAgo(1));
   const [runId, setRunId] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [profile, setProfile] = useState("conservador");
+
+  const { data: profiles } = useQuery({ queryKey: ["profiles"], queryFn: api.profiles });
 
   const range =
     period === "custom"
@@ -36,6 +39,7 @@ export default function Simulacion() {
       api.launchBacktest({
         ...range,
         overrides: {
+          ...(profiles?.[profile] ?? {}),
           capital_inicial: Number(capital) || 100,
           sizing: { mode: "capital_fraction", capital_fraction_pct: Number(fraction) || 10 },
         },
@@ -96,6 +100,18 @@ export default function Simulacion() {
               value={fraction}
               onChange={(e) => setFraction(e.target.value)}
             />
+          </label>
+          <label className="block">
+            <span className="text-xs text-slate-500" title="Perfiles definidos en config/profiles.yaml">Perfil</span>
+            <select
+              className="mt-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm"
+              value={profile}
+              onChange={(e) => setProfile(e.target.value)}
+            >
+              {Object.keys(profiles ?? { conservador: {} }).map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
           </label>
           <div className="flex gap-1">
             {(
