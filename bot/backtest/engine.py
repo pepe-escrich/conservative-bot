@@ -23,10 +23,11 @@ from bot.config import BotConfig
 from bot.data.store import CandleStore
 from bot.backtest.metrics import compute_metrics
 from bot.indicators.base import SignalContext
+from bot.indicators.classic import atr as atr_series
 from bot.persistence.db import Database
 from bot.scoring.scorer import TokenScore, rank_tokens, score_token
 from bot.strategy.manager import StepLadderManager
-from bot.strategy.models import OPEN, Trade
+from bot.strategy.models import OPEN, PendingEntry, Trade
 from bot.strategy.setup import build_trade, side_from_score
 
 SIGNAL_LOOKBACK_BARS = 500
@@ -107,7 +108,26 @@ class BacktestEngine:
         equity = cfg.capital_inicial
         open_trades: list[Trade] = []
         all_trades: list[Trade] = []
+        pending: list[PendingEntry] = []
         equity_curve: list[tuple[int, float]] = []
+        self.entry_stats = {"orders": 0, "filled": 0, "cancelled": 0, "timeout_market": 0}
+
+        def open_trade(symbol: str, side: int, ts: int, price: float, atr_value: float,
+                       score: float, entry_type: str) -> Trade | None:
+            nonlocal equity
+            reserved = sum(t.margin * (t.remaining_size / t.size) for t in open_trades)
+            trade = build_trade(
+                symbol, side, ts, price, data[symbol]["signal"].iloc[:0],
+                equity=equity, available_margin=max(equity - reserved, 0.0),
+                config=cfg, score=score, mode="backtest",
+                atr_value=atr_value, entry_type=entry_type,
+            )
+            if trade is None:
+                return None
+            equity -= trade.fills[0].fee
+            open_trades.append(trade)
+            all_trades.append(trade)
+            return trade
 
         days = [date_from + timedelta(days=i) for i in range((date_to - date_from).days + 1)]
         for day_idx, day in enumerate(days):
@@ -116,7 +136,7 @@ class BacktestEngine:
             day_end_ms = int((t0 + timedelta(days=1)).timestamp() * 1000)
 
             # --- 1) scoring del día ---------------------------------------
-            busy = {t.symbol for t in open_trades}
+            busy = {t.symbol for t in open_trades} | {p.symbol for p in pending}
             if self.scores_provider is not None:
                 scores = self.scores_provider(day, set(data))
             else:
@@ -131,51 +151,85 @@ class BacktestEngine:
 
             candidates = [s for s in rank_tokens(scores, cfg) if s.symbol not in busy]
 
-            # --- 2) apertura de trades ------------------------------------
-            new_trades: list[Trade] = []
+            # --- 2) apertura de trades / órdenes de entrada -----------------
+            new_symbols: set[str] = set()
             for cand in candidates:
                 frames = data[cand.symbol]
                 day_mgmt = self._slice_window(frames["mgmt"], t0_ms, day_end_ms)
                 if day_mgmt.empty:
                     continue
                 first = day_mgmt.iloc[0]
-                reserved = sum(t.margin * (t.remaining_size / t.size) for t in open_trades)
+                side = side_from_score(cand.score)
                 atr_value = self.atr_provider(day, cand.symbol) if self.atr_provider else None
                 if self.atr_provider is not None and atr_value is None:
                     continue
-                signal_df = (
-                    frames["signal"].iloc[:0]
-                    if atr_value is not None
-                    else self._slice_before(frames["signal"], t0_ms, SIGNAL_LOOKBACK_BARS)
-                )
-                trade = build_trade(
-                    cand.symbol,
-                    side_from_score(cand.score),
-                    int(first["timestamp"]),
-                    float(first["open"]),
-                    signal_df,
-                    equity=equity,
-                    available_margin=max(equity - reserved, 0.0),
-                    config=cfg,
-                    score=cand.score,
-                    mode="backtest",
-                    atr_value=atr_value,
-                )
-                if trade is None:
-                    continue
-                equity -= trade.fills[0].fee  # comisión de apertura
-                new_trades.append(trade)
-                open_trades.append(trade)
-                all_trades.append(trade)
+                if atr_value is None:
+                    signal_df = self._slice_before(frames["signal"], t0_ms, SIGNAL_LOOKBACK_BARS)
+                    if len(signal_df) < cfg.stop.atr_period + 5:
+                        continue
+                    atr_value = float(atr_series(signal_df, cfg.stop.atr_period).iloc[-1])
+
+                ref_price = float(first["open"])
+                if cfg.entry.mode == "pullback_limit":
+                    # orden limitada a un retroceso; se ejecuta (o expira) en 2b
+                    pending.append(
+                        PendingEntry(
+                            symbol=cand.symbol,
+                            side=side,
+                            limit_price=ref_price * (1 - side * cfg.entry.pullback_pct / 100),
+                            created=int(first["timestamp"]),
+                            expires=t0_ms + int(cfg.entry.timeout_hours * 3_600_000),
+                            score=cand.score,
+                            atr_value=atr_value,
+                            signal_price=ref_price,
+                        )
+                    )
+                    self.entry_stats["orders"] += 1
+                    new_symbols.add(cand.symbol)
+                elif open_trade(cand.symbol, side, int(first["timestamp"]), ref_price, atr_value, cand.score, "market"):
+                    new_symbols.add(cand.symbol)
 
             if self.db is not None:
-                self.db.save_scores(
-                    "backtest", day.isoformat(), scores, {t.symbol for t in new_trades}, self.run_id
+                self.db.save_scores("backtest", day.isoformat(), scores, new_symbols, self.run_id)
+
+            # --- 2b) fills / expiración de órdenes pendientes ---------------
+            for p in list(pending):
+                window = self._slice_window(
+                    data[p.symbol]["mgmt"], max(p.created, t0_ms), min(p.expires, day_end_ms)
                 )
+                filled = False
+                for row in window.itertuples(index=False):
+                    crossed = row.low <= p.limit_price if p.side > 0 else row.high >= p.limit_price
+                    if crossed:
+                        # una limitada llena a tu precio o mejor (gap a favor: al open)
+                        fill_price = (
+                            min(float(row.open), p.limit_price)
+                            if p.side > 0
+                            else max(float(row.open), p.limit_price)
+                        )
+                        open_trade(p.symbol, p.side, int(row.timestamp), fill_price, p.atr_value, p.score, "limit")
+                        filled = True
+                        break
+                if filled:
+                    pending.remove(p)
+                    self.entry_stats["filled"] += 1
+                elif p.expires < day_end_ms:
+                    pending.remove(p)
+                    if cfg.entry.on_timeout == "market":
+                        after = self._slice_window(data[p.symbol]["mgmt"], p.expires, day_end_ms)
+                        if not after.empty:
+                            first = after.iloc[0]
+                            open_trade(
+                                p.symbol, p.side, int(first["timestamp"]), float(first["open"]),
+                                p.atr_value, p.score, "market",
+                            )
+                            self.entry_stats["timeout_market"] += 1
+                    else:
+                        self.entry_stats["cancelled"] += 1
 
             # --- 3) gestión intradía --------------------------------------
             for trade in list(open_trades):
-                start = trade.entry_time if trade in new_trades else t0_ms
+                start = max(trade.entry_time, t0_ms)
                 window = self._slice_window(data[trade.symbol]["mgmt"], start, day_end_ms)
                 for row in window.itertuples(index=False):
                     fills = self.manager.on_candle(
@@ -212,6 +266,11 @@ class BacktestEngine:
             equity_curve[-1] = (equity_curve[-1][0], equity)
 
         metrics = compute_metrics(all_trades, equity_curve, cfg.capital_inicial)
+        if cfg.entry.mode != "market":
+            metrics["entry_orders"] = self.entry_stats["orders"]
+            metrics["entry_filled"] = self.entry_stats["filled"]
+            metrics["entry_cancelled"] = self.entry_stats["cancelled"]
+            metrics["entry_timeout_market"] = self.entry_stats["timeout_market"]
         if self.db is not None:
             self.db.update_run(self.run_id, status="done", progress=1.0, metrics=metrics)
         return BacktestResult(self.run_id, all_trades, equity_curve, metrics)

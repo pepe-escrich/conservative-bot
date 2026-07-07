@@ -21,21 +21,28 @@ def build_trade(
     score: float = 0.0,
     mode: str = "backtest",
     atr_value: float | None = None,
+    entry_type: str = "market",
 ) -> Trade | None:
     """Crea un Trade listo para gestionar, o None si no hay margen/datos suficientes.
 
     - SL a `stop.atr_mult` ATRs de la entrada; TP a `risk_reward` veces esa distancia.
     - Tamaño tal que si salta el SL inicial se pierde `risk_per_trade_pct`% del equity.
-    - La entrada paga slippage y comisión taker.
-    - `atr_value` permite inyectar un ATR precalculado (optimizador); si no, se
-      calcula sobre `signal_df`.
+    - entry_type 'market': paga slippage y comisión taker; 'limit' (pullback):
+      sin slippage y comisión maker.
+    - `atr_value` permite inyectar un ATR precalculado (optimizador/pendientes);
+      si no, se calcula sobre `signal_df`.
     """
     if atr_value is None:
         if len(signal_df) < config.stop.atr_period + 5:
             return None
         atr_value = float(atr(signal_df, config.stop.atr_period).iloc[-1])
 
-    entry = market_price * (1 + side * config.fees.slippage_pct / 100)
+    if entry_type == "limit":
+        entry = market_price
+        fee_pct = config.fees.maker_pct
+    else:
+        entry = market_price * (1 + side * config.fees.slippage_pct / 100)
+        fee_pct = config.fees.taker_pct
     sl_distance = config.stop.atr_mult * atr_value
     if sl_distance <= 0:
         return None
@@ -61,7 +68,7 @@ def build_trade(
     if margin <= 0 or size * entry < 1:  # notional mínimo de 1 USDT
         return None
 
-    open_fee = size * entry * config.fees.taker_pct / 100
+    open_fee = size * entry * fee_pct / 100
     trade = Trade(
         symbol=symbol,
         side=side,

@@ -23,6 +23,20 @@ class Fill:
 
 
 @dataclass
+class PendingEntry:
+    """Orden limitada de entrada (modo pullback) a la espera de fill o expiración."""
+
+    symbol: str
+    side: int
+    limit_price: float
+    created: int           # ms UTC
+    expires: int           # ms UTC
+    score: float
+    atr_value: float       # ATR capturado en el momento de la señal
+    signal_price: float    # precio cuando se eligió el token
+
+
+@dataclass
 class Trade:
     symbol: str
     side: int              # LONG (+1) o SHORT (-1)

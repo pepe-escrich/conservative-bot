@@ -21,7 +21,7 @@ export default function Backtest() {
   const [form, setForm] = useState({
     trades_per_day: "", leverage: "", risk_reward: "", risk_per_trade_pct: "",
     min_score: "", step_pct: "", partial_close_pct: "", atr_mult: "",
-    trail_mode: "", basis: "",
+    trail_mode: "", basis: "", entry_mode: "", pullback_pct: "", timeout_hours: "", on_timeout: "",
   });
 
   const { data: runs } = useQuery({
@@ -45,6 +45,12 @@ export default function Backtest() {
       if (form.basis) steps.basis = form.basis;
       if (Object.keys(steps).length) overrides.steps = steps;
       if (form.atr_mult) overrides.stop = { atr_mult: numberField(form.atr_mult) };
+      const entry: Record<string, unknown> = {};
+      if (form.entry_mode) entry.mode = form.entry_mode;
+      if (form.pullback_pct) entry.pullback_pct = numberField(form.pullback_pct);
+      if (form.timeout_hours) entry.timeout_hours = numberField(form.timeout_hours);
+      if (form.on_timeout) entry.on_timeout = form.on_timeout;
+      if (Object.keys(entry).length) overrides.entry = entry;
       return api.launchBacktest({ date_from: dateFrom, date_to: dateTo, overrides });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["runs"] }),
@@ -105,6 +111,26 @@ export default function Backtest() {
               <option value="">(config)</option>
               <option value="margin_pnl">% PnL sobre margen</option>
               <option value="price">% precio</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-slate-500">Entrada</span>
+            <select className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm"
+                    value={form.entry_mode} onChange={(e) => setForm({ ...form, entry_mode: e.target.value })}>
+              <option value="">(config)</option>
+              <option value="market">A mercado</option>
+              <option value="pullback_limit">Límite en pullback</option>
+            </select>
+          </label>
+          {field("Pullback %", "pullback_pct", "0.5")}
+          {field("Validez limitada (h)", "timeout_hours", "6")}
+          <label className="block">
+            <span className="text-xs text-slate-500">Al expirar</span>
+            <select className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm"
+                    value={form.on_timeout} onChange={(e) => setForm({ ...form, on_timeout: e.target.value })}>
+              <option value="">(config)</option>
+              <option value="cancel">Cancelar</option>
+              <option value="market">Entrar a mercado</option>
             </select>
           </label>
         </div>

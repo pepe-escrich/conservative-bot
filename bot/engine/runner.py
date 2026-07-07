@@ -25,8 +25,9 @@ from bot.data.store import CandleStore
 from bot.indicators.base import SignalContext
 from bot.persistence.db import Database
 from bot.scoring.scorer import rank_tokens, score_token
+from bot.indicators.classic import atr as atr_series
 from bot.strategy.manager import StepLadderManager
-from bot.strategy.models import OPEN, Trade
+from bot.strategy.models import OPEN, PendingEntry, Trade
 from bot.strategy.setup import build_trade, side_from_score
 
 log = logging.getLogger("paper")
@@ -43,6 +44,9 @@ class PaperRunner:
         self.manager = StepLadderManager(config)
         self.tz = ZoneInfo(config.schedule.timezone)
         self.open_trades: list[Trade] = []
+        # órdenes limitadas pendientes (modo pullback). Solo en memoria: si el
+        # proceso se reinicia se pierden, pero expiran en horas por diseño.
+        self.pending: list[PendingEntry] = []
         self._stop = threading.Event()
         self._poll_thread: threading.Thread | None = None
         self.scheduler = BackgroundScheduler(timezone=str(self.tz))
@@ -98,7 +102,7 @@ class PaperRunner:
             ctx = SignalContext(signal_df=signal_df.tail(500), trend_df=trend_df.tail(400), config=cfg)
             scores.append(score_token(symbol, ctx))
 
-        busy = {t.symbol for t in self.open_trades}
+        busy = {t.symbol for t in self.open_trades} | {p.symbol for p in self.pending}
         candidates = [s for s in rank_tokens(scores, cfg) if s.symbol not in busy]
         prices = self.exchange.fetch_last_prices([c.symbol for c in candidates]) if candidates else {}
 
@@ -107,14 +111,36 @@ class PaperRunner:
             price = prices.get(cand.symbol)
             if not price:
                 continue
+            side = side_from_score(cand.score)
+            signal_df = frames_by_symbol[cand.symbol].tail(500)
+            if cfg.entry.mode == "pullback_limit":
+                if len(signal_df) < cfg.stop.atr_period + 5:
+                    continue
+                pending = PendingEntry(
+                    symbol=cand.symbol,
+                    side=side,
+                    limit_price=price * (1 - side * cfg.entry.pullback_pct / 100),
+                    created=now_ms,
+                    expires=now_ms + int(cfg.entry.timeout_hours * 3_600_000),
+                    score=cand.score,
+                    atr_value=float(atr_series(signal_df, cfg.stop.atr_period).iloc[-1]),
+                    signal_price=price,
+                )
+                self.pending.append(pending)
+                opened.add(cand.symbol)
+                log.info(
+                    "paper: limitada %s %s @ %.6g (precio %.6g, score %.3f)",
+                    "long" if side > 0 else "short", cand.symbol, pending.limit_price, price, cand.score,
+                )
+                continue
             equity = self.equity
             reserved = sum(t.margin * (t.remaining_size / t.size) for t in self.open_trades)
             trade = build_trade(
                 cand.symbol,
-                side_from_score(cand.score),
+                side,
                 now_ms,
                 price,
-                frames_by_symbol[cand.symbol].tail(500),
+                signal_df,
                 equity=equity,
                 available_margin=max(equity - reserved, 0.0),
                 config=cfg,
@@ -136,7 +162,7 @@ class PaperRunner:
 
     def _poll_loop(self) -> None:
         while not self._stop.wait(self.config.paper.poll_seconds):
-            if not self.open_trades:
+            if not self.open_trades and not self.pending:
                 continue
             try:
                 self.poll_once()
@@ -144,10 +170,11 @@ class PaperRunner:
                 log.warning("paper: error en polling: %s", e)
 
     def poll_once(self) -> None:
-        symbols = sorted({t.symbol for t in self.open_trades})
+        symbols = sorted({t.symbol for t in self.open_trades} | {p.symbol for p in self.pending})
         prices = self.exchange.fetch_last_prices(symbols)
         now_ms = int(time.time() * 1000)
         self.db.upsert_prices(prices, now_ms)
+        self._process_pending(prices, now_ms)
 
         for trade in list(self.open_trades):
             price = prices.get(trade.symbol)
@@ -162,3 +189,39 @@ class PaperRunner:
                 log.info(
                     "paper: cerrado %s (%s) pnl %.2f", trade.symbol, trade.close_reason, trade.realized_pnl
                 )
+
+    def _process_pending(self, prices: dict[str, float], now_ms: int) -> None:
+        """Fills y expiraciones de las órdenes limitadas (modo pullback)."""
+        cfg = self.config
+        for p in list(self.pending):
+            price = prices.get(p.symbol)
+            if not price:
+                continue
+            crossed = price <= p.limit_price if p.side > 0 else price >= p.limit_price
+            expired = now_ms >= p.expires
+            if not crossed and not expired:
+                continue
+            self.pending.remove(p)
+            if not crossed and cfg.entry.on_timeout == "cancel":
+                log.info("paper: limitada %s cancelada por timeout", p.symbol)
+                continue
+            # fill de la limitada (a su precio o mejor) o entrada a mercado al expirar
+            entry_type = "limit" if crossed else "market"
+            fill_price = (min(price, p.limit_price) if p.side > 0 else max(price, p.limit_price)) if crossed else price
+            equity = self.equity
+            reserved = sum(t.margin * (t.remaining_size / t.size) for t in self.open_trades)
+            trade = build_trade(
+                p.symbol, p.side, now_ms, fill_price,
+                self.store.load(p.symbol, cfg.timeframes.signal).tail(500),
+                equity=equity, available_margin=max(equity - reserved, 0.0),
+                config=cfg, score=p.score, mode="paper",
+                atr_value=p.atr_value, entry_type=entry_type,
+            )
+            if trade is None:
+                continue
+            self.db.save_trade(trade)
+            self.open_trades.append(trade)
+            log.info(
+                "paper: %s %s %s @ %.6g", "fill limitada" if crossed else "timeout->market",
+                trade.side_name, trade.symbol, trade.entry_price,
+            )

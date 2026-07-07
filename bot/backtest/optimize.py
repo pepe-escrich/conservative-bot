@@ -115,6 +115,12 @@ def suggest_overrides(trial: optuna.Trial) -> dict:
         "leverage": trial.suggest_categorical("leverage", [3, 5, 10, 15, 20]),
         "risk_per_trade_pct": round(trial.suggest_float("risk_per_trade_pct", 0.5, 2.0), 2),
         "risk_reward": round(trial.suggest_float("risk_reward", 1.5, 6.0), 2),
+        "entry": {
+            "mode": trial.suggest_categorical("entry_mode", ["market", "pullback_limit"]),
+            "pullback_pct": round(trial.suggest_float("pullback_pct", 0.2, 3.0, log=True), 2),
+            "timeout_hours": round(trial.suggest_float("timeout_hours", 2, 24), 1),
+            "on_timeout": trial.suggest_categorical("on_timeout", ["cancel", "market"]),
+        },
         "stop": {"atr_mult": round(trial.suggest_float("atr_mult", 0.8, 3.5), 2)},
         "steps": {
             "basis": trial.suggest_categorical("basis", ["margin_pnl", "price"]),

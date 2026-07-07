@@ -48,7 +48,18 @@ class StepsConfig(BaseModel):
 
 class FeesConfig(BaseModel):
     taker_pct: float = 0.05
+    maker_pct: float = 0.02   # órdenes limitadas (entrada por pullback)
     slippage_pct: float = 0.02
+
+
+class EntryConfig(BaseModel):
+    # 'market': entra al precio actual en cuanto se elige el token.
+    # 'pullback_limit': orden limitada a pullback_pct% mejor precio, válida
+    #   timeout_hours; al expirar se cancela o se entra a mercado.
+    mode: Literal["market", "pullback_limit"] = "market"
+    pullback_pct: float = 0.5
+    timeout_hours: float = 6.0
+    on_timeout: Literal["cancel", "market"] = "cancel"
 
 
 class TimeframesConfig(BaseModel):
@@ -86,6 +97,7 @@ class BotConfig(BaseModel):
     risk_per_trade_pct: float = 1.0
     sizing: SizingConfig = SizingConfig()
     risk_reward: float = 3
+    entry: EntryConfig = EntryConfig()
     stop: StopConfig = StopConfig()
     steps: StepsConfig = StepsConfig()
     fees: FeesConfig = FeesConfig()
