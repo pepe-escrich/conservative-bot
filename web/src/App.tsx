@@ -50,13 +50,14 @@ export default function App() {
             {status && (
               <span
                 className={`px-2 py-0.5 rounded-full text-xs ${
-                  status.paper_running
+                  status.bot_running
                     ? "bg-emerald-500/15 text-emerald-400"
                     : "bg-slate-700/50 text-slate-400"
                 }`}
                 title={`Exchange: ${status.exchange} · ${status.schedule}`}
               >
-                paper {status.paper_running ? "activo" : "parado"}
+                {status.execution_mode === "okx" ? (status.demo ? "OKX demo" : "OKX REAL") : "paper"}{" "}
+                {status.bot_running ? "operando" : "parado"}
               </span>
             )}
             <label className="text-slate-400">Fuente</label>

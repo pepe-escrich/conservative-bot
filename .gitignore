@@ -12,6 +12,6 @@ __pycache__/
 node_modules/
 web/dist/
 
-# Entorno
+# Entorno (las API keys viven en .env; .env.example sí se versiona)
 .env
 .DS_Store

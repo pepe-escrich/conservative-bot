@@ -90,3 +90,37 @@ def build_trade(
 
 def side_from_score(score: float) -> int:
     return LONG if score >= 0 else -1
+
+
+def trade_from_execution(
+    symbol: str,
+    side: int,
+    fill_price: float,
+    fill_size: float,
+    fill_fee: float,
+    fill_time: int,
+    atr_value: float,
+    config: BotConfig,
+    score: float = 0.0,
+    mode: str = "paper",
+) -> Trade:
+    """Construye el Trade a partir de un fill REAL del exchange (precio/tamaño/comisión
+    reales). SL y TP se calculan sobre el precio realmente ejecutado."""
+    sl_distance = config.stop.atr_mult * atr_value
+    trade = Trade(
+        symbol=symbol,
+        side=side,
+        entry_price=fill_price,
+        entry_time=fill_time,
+        size=fill_size,
+        initial_sl=fill_price - side * sl_distance,
+        tp=fill_price + side * config.risk_reward * sl_distance,
+        leverage=config.leverage,
+        margin=fill_size * fill_price / config.leverage,
+        score=score,
+        mode=mode,
+    )
+    trade.fills.append(Fill(time=fill_time, price=fill_price, size=fill_size, kind="open", pnl=0.0, fee=fill_fee))
+    trade.fees_paid = fill_fee
+    trade.realized_pnl = -fill_fee
+    return trade

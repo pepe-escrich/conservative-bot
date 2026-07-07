@@ -34,6 +34,8 @@ class PendingEntry:
     score: float
     atr_value: float       # ATR capturado en el momento de la señal
     signal_price: float    # precio cuando se eligió el token
+    order_id: str | None = None  # id de la orden limitada real (ejecución OKX)
+    size: float = 0.0            # tamaño solicitado (ejecución OKX)
 
 
 @dataclass

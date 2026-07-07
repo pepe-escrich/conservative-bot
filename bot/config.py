@@ -86,6 +86,14 @@ class SizingConfig(BaseModel):
     capital_fraction_pct: float = 10.0
 
 
+class ExecutionConfig(BaseModel):
+    # 'paper': fills simulados internamente (sin cuenta).
+    # 'okx': órdenes reales contra OKX vía python-okx (demo o real según 'demo').
+    mode: Literal["paper", "okx"] = "paper"
+    domain: str = "https://eea.okx.com"   # OKX Europa; global: https://www.okx.com
+    demo: bool = True                      # True -> cabecera de demo trading (flag=1)
+
+
 class BotConfig(BaseModel):
     exchange: str = "okx"
     universe: list[str] = Field(default_factory=list)
@@ -114,6 +122,30 @@ class BotConfig(BaseModel):
     timeframes: TimeframesConfig = TimeframesConfig()
     frvp: FrvpConfig = FrvpConfig()
     paper: PaperConfig = PaperConfig()
+    execution: ExecutionConfig = ExecutionConfig()
+
+
+def load_env(path: Path | None = None) -> None:
+    """Carga las variables de un .env en la raíz del proyecto (KEY=VALUE, sin dependencias)."""
+    env_path = path or PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def okx_credentials() -> dict[str, str]:
+    """API keys de OKX desde el entorno (.env): OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE."""
+    load_env()
+    return {
+        "api_key": os.environ.get("OKX_API_KEY", ""),
+        "api_secret": os.environ.get("OKX_API_SECRET", ""),
+        "passphrase": os.environ.get("OKX_API_PASSPHRASE", ""),
+    }
 
 
 def load_config(path: str | Path | None = None) -> BotConfig:

@@ -121,5 +121,10 @@ frvp:
   bins: 100
 
 paper:
-  enabled: false               # si true, el runner de paper trading arranca con la API
+  enabled: false               # (modo clásico) si true, el runner arranca con la API
   poll_seconds: 15
+
+execution:
+  mode: okx                    # 'paper' (simulado) u 'okx' (órdenes reales vía python-okx)
+  domain: https://eea.okx.com  # OKX Europa; global: https://www.okx.com
+  demo: true                   # true = demo trading (flag 1). Keys en el fichero .env

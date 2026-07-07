@@ -8,5 +8,7 @@ services:
     volumes:
       - ./data:/data                    # velas + base de datos (persistente)
       - ./config:/app/config            # editar config.yaml sin reconstruir
+    env_file:
+      - .env                            # OKX_API_KEY / OKX_API_SECRET / OKX_API_PASSPHRASE
     environment:
       - TZ=Europe/Madrid

@@ -10,11 +10,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from api.routes import backtests, data
+from api.routes import backtests, bot, data
 from bot.config import PROJECT_ROOT, load_config
 from bot.persistence.db import Database
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+log = logging.getLogger("api")
 
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
 
@@ -25,12 +26,17 @@ async def lifespan(app: FastAPI):
     app.state.config = config
     app.state.db = Database()
     app.state.runner = None
-    if config.paper.enabled:
-        from bot.engine.runner import PaperRunner
+    # autoarranque: si estaba en marcha (bot_state) o el modo paper clásico está activado
+    should_run = config.paper.enabled or app.state.db.get_state("running") == "1"
+    if should_run:
+        from bot.engine.runner import BotRunner
 
-        runner = PaperRunner(config, app.state.db)
-        runner.start()
-        app.state.runner = runner
+        try:
+            runner = BotRunner(config, app.state.db)
+            runner.start()
+            app.state.runner = runner
+        except Exception as e:
+            log.error("no se pudo autoarrancar el bot: %s", e)
     yield
     if app.state.runner:
         app.state.runner.stop()
@@ -43,6 +49,7 @@ app.add_middleware(
 
 app.include_router(data.router, prefix="/api")
 app.include_router(backtests.router, prefix="/api")
+app.include_router(bot.router, prefix="/api")
 
 if WEB_DIST.exists():
     app.mount("/", StaticFiles(directory=WEB_DIST, html=True), name="web")

@@ -82,6 +82,10 @@ CREATE TABLE IF NOT EXISTS last_prices (
     price REAL NOT NULL,
     time INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS bot_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_trades_run ON trades(run_id, status);
 CREATE INDEX IF NOT EXISTS idx_fills_trade ON fills(trade_id);
 CREATE INDEX IF NOT EXISTS idx_equity_run ON equity_snapshots(run_id, time);
@@ -197,6 +201,7 @@ class Database:
         status: str | None = None,
         symbol: str | None = None,
         limit: int = 500,
+        since_ms: int | None = None,
     ) -> list[dict]:
         query = "SELECT * FROM trades WHERE 1=1"
         params: list = []
@@ -206,6 +211,9 @@ class Database:
         if run_id is not None:
             query += " AND run_id = ?"
             params.append(run_id)
+        if since_ms:
+            query += " AND entry_time >= ?"
+            params.append(since_ms)
         if status:
             query += " AND status = ?"
             params.append(status)
@@ -234,15 +242,15 @@ class Database:
             )
             self.conn.commit()
 
-    def get_equity_curve(self, mode: str, run_id: int | None = None) -> list[dict]:
+    def get_equity_curve(self, mode: str, run_id: int | None = None, since_ms: int | None = None) -> list[dict]:
         if run_id is not None:
             rows = self.conn.execute(
                 "SELECT time, equity FROM equity_snapshots WHERE run_id = ? ORDER BY time", (run_id,)
             ).fetchall()
         else:
             rows = self.conn.execute(
-                "SELECT time, equity FROM equity_snapshots WHERE mode = ? AND run_id IS NULL ORDER BY time",
-                (mode,),
+                "SELECT time, equity FROM equity_snapshots WHERE mode = ? AND run_id IS NULL AND time >= ? ORDER BY time",
+                (mode, since_ms or 0),
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -259,6 +267,27 @@ class Database:
                 ],
             )
             self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # Estado del bot (running, % por trade, capital de referencia, baseline)
+    # ------------------------------------------------------------------
+
+    def get_state(self, key: str, default: str | None = None) -> str | None:
+        row = self.conn.execute("SELECT value FROM bot_state WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def set_state(self, key: str, value) -> None:
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO bot_state (key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, str(value)),
+            )
+            self.conn.commit()
+
+    def baseline_ms(self) -> int:
+        """Instante del último reset de KPIs (0 si nunca se ha reseteado)."""
+        return int(self.get_state("baseline_ts", "0"))
 
     def upsert_prices(self, prices: dict[str, float], time_ms: int) -> None:
         with self._lock:
@@ -307,10 +336,11 @@ class Database:
             trades.append(trade)
         return trades
 
-    def total_realized_pnl(self, mode: str = "paper") -> float:
+    def total_realized_pnl(self, mode: str = "paper", since_ms: int | None = None) -> float:
         row = self.conn.execute(
-            "SELECT COALESCE(SUM(realized_pnl), 0) AS s FROM trades WHERE mode = ? AND run_id IS NULL",
-            (mode,),
+            "SELECT COALESCE(SUM(realized_pnl), 0) AS s FROM trades"
+            " WHERE mode = ? AND run_id IS NULL AND entry_time >= ?",
+            (mode, since_ms or 0),
         ).fetchone()
         return row["s"]
 

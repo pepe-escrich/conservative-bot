@@ -59,7 +59,9 @@ def summary(request: Request, mode: str = "paper", run_id: int | None = None):
     fills_today = db.get_recent_fills(mode, since_ms)
     today_pnl = sum(f["pnl"] - f["fee"] for f in fills_today)
 
-    equity = cfg.capital_inicial + db.total_realized_pnl(mode)
+    baseline = db.baseline_ms()
+    reference = float(db.get_state("reference_capital", str(cfg.capital_inicial)))
+    equity = reference + db.total_realized_pnl(mode, since_ms=baseline)
     open_trades = db.get_trades(mode=mode, status="open", limit=100)
     prices = db.get_prices()
     unrealized = 0.0
@@ -74,19 +76,21 @@ def summary(request: Request, mode: str = "paper", run_id: int | None = None):
         "source": mode,
         "equity": round(equity, 2),
         "unrealized_pnl": round(unrealized, 2),
-        "capital_inicial": cfg.capital_inicial,
-        "total_return_pct": round((equity / cfg.capital_inicial - 1) * 100, 2),
+        "capital_inicial": round(reference, 2),
+        "total_return_pct": round((equity / reference - 1) * 100, 2) if reference else 0.0,
         "today_pnl": round(today_pnl, 2),
         "today_pnl_pct": round(100 * today_pnl / start_of_day_equity, 2) if start_of_day_equity else 0,
         "daily_target_pct": 1.0,
         "open_trades": len(open_trades),
-        **_win_stats(db.get_trades(mode=mode, status="closed", limit=10000)),
+        **_win_stats(db.get_trades(mode=mode, status="closed", limit=10000, since_ms=baseline)),
     }
 
 
 @router.get("/equity")
 def equity_curve(request: Request, mode: str = "paper", run_id: int | None = None):
-    return _db(request).get_equity_curve(mode, run_id)
+    db = _db(request)
+    since = db.baseline_ms() if run_id is None else None
+    return db.get_equity_curve(mode, run_id, since_ms=since)
 
 
 @router.get("/trades")
@@ -100,7 +104,9 @@ def trades(
 ):
     db = _db(request)
     cfg = _config(request)
-    rows = db.get_trades(mode=mode, run_id=run_id, status=status, symbol=symbol, limit=limit)
+    # el baseline del reset oculta el histórico anterior, pero nunca las posiciones abiertas
+    since = db.baseline_ms() if (run_id is None and status != "open") else None
+    rows = db.get_trades(mode=mode, run_id=run_id, status=status, symbol=symbol, limit=limit, since_ms=since)
     prices = db.get_prices()
     for t in rows:
         side = 1 if t["side"] == "long" else -1
@@ -134,7 +140,10 @@ def pnl_by_interval(
     db = _db(request)
     cfg = _config(request)
     tz = ZoneInfo(cfg.schedule.timezone)
-    closed = db.get_trades(mode=mode if run_id is None else None, run_id=run_id, status="closed", limit=10000)
+    closed = db.get_trades(
+        mode=mode if run_id is None else None, run_id=run_id, status="closed", limit=10000,
+        since_ms=db.baseline_ms() if run_id is None else None,
+    )
 
     buckets: dict[str, dict] = {}
     for t in closed:
@@ -199,6 +208,11 @@ def status(request: Request):
         "schedule": f"{cfg.schedule.time} {cfg.schedule.timezone}",
         "trades_per_day": cfg.trades_per_day,
         "leverage": cfg.leverage,
+        "execution_mode": cfg.execution.mode,
+        "demo": cfg.execution.demo,
         "paper_enabled": cfg.paper.enabled,
         "paper_running": runner is not None,
+        "bot_running": runner is not None,
+        "open_trades": len(runner.open_trades) if runner else 0,
+        "pending_orders": len(runner.pending) if runner else 0,
     }

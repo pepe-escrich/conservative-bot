@@ -47,22 +47,50 @@ cd web && npm install && npm run dev              # frontend en http://localhost
 
 Para el **paper trading**, pon `paper.enabled: true` en `config/config.yaml` y arranca la API: el bot puntuará y abrirá trades cada día a la hora configurada, gestionándolos con precios reales.
 
+## Conexión con la cuenta demo de OKX
+
+La ejecución real (demo o live) usa el SDK oficial `python-okx` contra **OKX Europa**
+(`eea.okx.com`); se controla en `config.yaml`:
+
+```yaml
+execution:
+  mode: okx     # 'paper' = simulado interno; 'okx' = órdenes reales
+  domain: https://eea.okx.com
+  demo: true    # demo trading (flag 1)
+```
+
+1. Crea una API key de **demo trading** en OKX (permiso *Trade*).
+2. `cp .env.example .env` y rellena `OKX_API_KEY`, `OKX_API_SECRET`, `OKX_API_PASSPHRASE`.
+3. Arranca la web y usa el panel del dashboard: **Iniciar bot** (con el % de capital
+   por trade), **Parar** (pregunta si cerrar posiciones) y **Reset** (nuevo capital de
+   referencia + limpieza de KPIs; el saldo demo real se recarga desde la web de OKX).
+
+Nota: los perps lineales de OKX (también en la entidad europea) liquidan en USDT;
+el "USD-M" de OKX EU significa que puedes usar USDC/USD como colateral de margen.
+
 ## Despliegue en Hetzner Cloud
 
-Cualquier VPS pequeño sirve (CX22, 2 vCPU / 4 GB). Con Docker instalado:
+Cualquier VPS pequeño sirve (CX22, 2 vCPU / 4 GB, ~4 €/mes) con Ubuntu 24.04 + Docker.
 
 ```bash
-# en el servidor
-git clone <tu-repo> && cd conservative-bot
+# en el servidor (una vez): instalar docker si no lo tiene
+curl -fsSL https://get.docker.com | sh
+
+# desplegar
+git clone https://github.com/pepe-escrich/conservative-bot.git && cd conservative-bot
+cp .env.example .env && nano .env          # pegar las API keys de OKX demo
 docker compose up -d --build
 
-# descargar velas dentro del contenedor (primera vez)
+# primera vez: descargar histórico de velas dentro del contenedor
 docker compose exec bot python -m bot fetch --days 120
 ```
 
-La web queda en `http://IP-del-servidor:8000`. El estado (velas + BD) persiste en `./data`; la config se puede editar en `./config/config.yaml` y reiniciar con `docker compose restart`.
+La web queda en `http://IP-del-servidor:8000`. El estado (velas + BD + estado del bot)
+persiste en `./data`; la config se edita en `./config/config.yaml` y se aplica con
+`docker compose restart`. Actualizar versión: `git pull && docker compose up -d --build`.
 
-Recomendado: poner delante un Caddy/Traefik con TLS y restringir el puerto con el firewall de Hetzner si no quieres exponer el dashboard.
+Seguridad: el dashboard no tiene login — restringe el puerto 8000 en el firewall de
+Hetzner a tu IP, o pon delante Caddy/Traefik con TLS y basic auth.
 
 ## Configuración (config/config.yaml)
 

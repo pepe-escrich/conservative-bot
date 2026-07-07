@@ -3,6 +3,7 @@ import { api, fmtPct, fmtUsd, pnlColor } from "../api";
 import { useSource } from "../state";
 import { Card, Empty, SideBadge, StatCard } from "../components/ui";
 import { EquityChart, PnlBars } from "../components/charts";
+import BotPanel from "../components/BotPanel";
 
 export default function Dashboard() {
   const { source } = useSource();
@@ -37,6 +38,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-4">
+      {source.kind === "paper" && <BotPanel />}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard label="Equity" value={fmtUsd(summary?.equity)} sub={`inicial ${fmtUsd(summary?.capital_inicial)}`} />
         <StatCard

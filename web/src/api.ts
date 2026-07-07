@@ -117,8 +117,27 @@ export interface Status {
   schedule: string;
   trades_per_day: number;
   leverage: number;
+  execution_mode: "paper" | "okx";
+  demo: boolean;
   paper_enabled: boolean;
   paper_running: boolean;
+  bot_running: boolean;
+  open_trades: number;
+  pending_orders: number;
+}
+
+export interface Account {
+  execution_mode: "paper" | "okx";
+  demo: boolean;
+  running: boolean;
+  capital_fraction_pct: number;
+  reference_capital: number;
+  baseline_ts: number | null;
+  bot_equity: number;
+  bot_pnl_since_reset: number;
+  balance: number | null;
+  balance_details: Record<string, number> | null;
+  balance_error?: string;
 }
 
 export const api = {
@@ -131,6 +150,13 @@ export const api = {
   scores: (src: Source) => get<Score[]>(`/api/scores?${sourceParams(src)}`),
   status: () => get<Status>("/api/status"),
   profiles: () => get<Record<string, Record<string, unknown>>>("/api/profiles"),
+  account: () => get<Account>("/api/account"),
+  startBot: (capital_fraction_pct: number | null) =>
+    send<{ running: boolean }>("POST", "/api/bot/start", { capital_fraction_pct }),
+  stopBot: (close_positions: boolean) =>
+    send<{ running: boolean; closed_trades: number }>("POST", "/api/bot/stop", { close_positions }),
+  resetAccount: (reference_amount: number | null, close_positions: boolean) =>
+    send<{ reference_capital: number }>("POST", "/api/account/reset", { reference_amount, close_positions }),
   runs: () => get<Run[]>("/api/backtests"),
   launchBacktest: (body: { date_from: string; date_to: string; overrides: Record<string, unknown> }) =>
     send<{ run_id: number }>("POST", "/api/backtests", body),
