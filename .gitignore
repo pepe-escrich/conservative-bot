@@ -5,8 +5,8 @@ __pycache__/
 .venv/
 .pytest_cache/
 
-# Datos locales (velas + base de datos)
-data/
+# Datos locales (velas + base de datos) — solo el data/ de la raíz
+/data/
 
 # Node / frontend
 node_modules/
