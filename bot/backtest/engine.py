@@ -207,7 +207,14 @@ class BacktestEngine:
                             if p.side > 0
                             else max(float(row.open), p.limit_price)
                         )
-                        open_trade(p.symbol, p.side, int(row.timestamp), fill_price, p.atr_value, p.score, "limit")
+                        trade = open_trade(p.symbol, p.side, int(row.timestamp), fill_price, p.atr_value, p.score, "limit")
+                        if trade is not None:
+                            # El fill ocurre a mitad de vela: los extremos de ESA vela
+                            # pueden ser anteriores al fill (el high de una vela roja
+                            # ocurre antes de la caída que ejecuta la limitada). Solo
+                            # el close es posterior seguro -> esa vela se gestiona por
+                            # tick con el close, no con OHLC completo.
+                            trade.limit_fill_candle_ts = int(row.timestamp)
                         filled = True
                         break
                 if filled:
@@ -232,9 +239,13 @@ class BacktestEngine:
                 start = max(trade.entry_time, t0_ms)
                 window = self._slice_window(data[trade.symbol]["mgmt"], start, day_end_ms)
                 for row in window.itertuples(index=False):
-                    fills = self.manager.on_candle(
-                        trade, int(row.timestamp), float(row.open), float(row.high), float(row.low), float(row.close)
-                    )
+                    if int(row.timestamp) == getattr(trade, "limit_fill_candle_ts", None):
+                        # vela del fill de una limitada: solo el close es post-fill
+                        fills = self.manager.on_tick(trade, int(row.timestamp), float(row.close))
+                    else:
+                        fills = self.manager.on_candle(
+                            trade, int(row.timestamp), float(row.open), float(row.high), float(row.low), float(row.close)
+                        )
                     for f in fills:
                         equity += f.pnl - f.fee
                     if trade.status != OPEN:

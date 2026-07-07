@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api, fmtPct, fmtUsd, pnlColor, Run } from "../api";
-import { Card, Empty, StatCard, Td, Th } from "../components/ui";
+import { api, fmtDate, fmtPct, fmtPrice, fmtUsd, pnlColor, Run } from "../api";
+import { Card, Empty, ReasonBadge, SideBadge, StatCard, Td, Th } from "../components/ui";
 import { EquityChart } from "../components/charts";
+import FillsDetail from "../components/FillsDetail";
 
 function isoDaysAgo(days: number): string {
   const d = new Date();
@@ -19,14 +20,21 @@ async function getRun(id: number): Promise<Run> {
 export default function Simulacion() {
   const [capital, setCapital] = useState("100");
   const [fraction, setFraction] = useState("10");
-  const [period, setPeriod] = useState(30);
+  const [period, setPeriod] = useState<number | "custom">(30);
+  const [dateFrom, setDateFrom] = useState(isoDaysAgo(30));
+  const [dateTo, setDateTo] = useState(isoDaysAgo(1));
   const [runId, setRunId] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  const range =
+    period === "custom"
+      ? { date_from: dateFrom, date_to: dateTo }
+      : { date_from: isoDaysAgo(period), date_to: isoDaysAgo(1) };
 
   const launch = useMutation({
     mutationFn: () =>
       api.launchBacktest({
-        date_from: isoDaysAgo(period),
-        date_to: isoDaysAgo(1),
+        ...range,
         overrides: {
           capital_inicial: Number(capital) || 100,
           sizing: { mode: "capital_fraction", capital_fraction_pct: Number(fraction) || 10 },
@@ -48,10 +56,16 @@ export default function Simulacion() {
     queryFn: () => api.equity({ kind: "backtest", runId: runId! }),
     enabled: done,
   });
+  const { data: trades } = useQuery({
+    queryKey: ["sim-trades", runId],
+    queryFn: () => api.trades(`run_id=${runId}&limit=1000`),
+    enabled: done,
+  });
 
   const start = Number(capital) || 100;
   const final = equity?.length ? equity[equity.length - 1].equity : null;
   const week = equity && equity.length >= 7 ? equity[6].equity : null;
+  const nDays = equity?.length ?? 0;
   const daily = (equity ?? []).map((p, i) => ({
     date: new Date(p.time).toLocaleDateString("es-ES", { day: "2-digit", month: "short" }),
     equity: p.equity,
@@ -84,13 +98,16 @@ export default function Simulacion() {
             />
           </label>
           <div className="flex gap-1">
-            {[
-              { d: 7, label: "1 semana" },
-              { d: 30, label: "1 mes" },
-              { d: 90, label: "3 meses" },
-            ].map((p) => (
+            {(
+              [
+                { d: 7, label: "1 semana" },
+                { d: 30, label: "1 mes" },
+                { d: 90, label: "3 meses" },
+                { d: "custom", label: "Personalizado" },
+              ] as const
+            ).map((p) => (
               <button
-                key={p.d}
+                key={String(p.d)}
                 onClick={() => setPeriod(p.d)}
                 className={`px-3 py-1.5 rounded-md text-sm ${
                   period === p.d ? "bg-slate-700 text-white" : "text-slate-400 hover:text-white"
@@ -100,6 +117,20 @@ export default function Simulacion() {
               </button>
             ))}
           </div>
+          {period === "custom" && (
+            <>
+              <label className="block">
+                <span className="text-xs text-slate-500">Desde</span>
+                <input type="date" className="mt-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm"
+                       value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              </label>
+              <label className="block">
+                <span className="text-xs text-slate-500">Hasta</span>
+                <input type="date" className="mt-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-1.5 text-sm"
+                       value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              </label>
+            </>
+          )}
           <button
             onClick={() => launch.mutate()}
             disabled={launch.isPending || run?.status === "running"}
@@ -123,7 +154,7 @@ export default function Simulacion() {
               tone={week != null ? week - start : undefined}
             />
             <StatCard
-              label={`Tras ${period} días`}
+              label={`Tras ${nDays} días`}
               value={fmtUsd(final)}
               sub={fmtPct((final / start - 1) * 100)}
               tone={final - start}
@@ -158,6 +189,48 @@ export default function Simulacion() {
                 </tbody>
               </table>
             </div>
+          </Card>
+
+          <Card title={`Trades de la simulación (${trades?.length ?? 0})`}>
+            {trades?.length ? (
+              <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-800">
+                      <Th>Apertura</Th><Th>Símbolo</Th><Th>Lado</Th><Th>Entrada</Th>
+                      <Th>Margen</Th><Th>Escalones</Th><Th>Salida</Th><Th>PnL neto</Th><Th>Comisiones</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trades.map((t) => (
+                      <Fragment key={t.id}>
+                        <tr
+                          className="border-b border-slate-800/60 hover:bg-slate-800/30 cursor-pointer"
+                          onClick={() => setExpanded(expanded === t.id ? null : t.id)}
+                        >
+                          <Td className="text-xs text-slate-400">{fmtDate(t.entry_time)}</Td>
+                          <Td className="font-medium">{t.symbol.replace(":USDT", "")}</Td>
+                          <Td><SideBadge side={t.side} /></Td>
+                          <Td className="font-mono">{fmtPrice(t.entry_price)}</Td>
+                          <Td className="font-mono text-xs">{fmtUsd(t.margin)}</Td>
+                          <Td><span className="px-2 py-0.5 rounded bg-slate-800 text-xs font-mono">{t.steps_hit}</span></Td>
+                          <Td><ReasonBadge reason={t.close_reason} /></Td>
+                          <Td className={`font-mono ${pnlColor(t.realized_pnl)}`}>{fmtUsd(t.realized_pnl)}</Td>
+                          <Td className="font-mono text-xs text-slate-400">{fmtUsd(t.fees_paid)}</Td>
+                        </tr>
+                        {expanded === t.id && (
+                          <tr>
+                            <td colSpan={9}><FillsDetail trade={t} /></td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <Empty text="Sin trades en el periodo." />
+            )}
           </Card>
         </>
       )}

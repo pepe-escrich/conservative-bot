@@ -79,6 +79,40 @@ def test_pullback_imposible_no_abre_trades(tmp_path):
     assert m["entry_cancelled"] == m["entry_orders"] > 0
 
 
+def test_fill_de_limitada_no_usa_el_high_previo_de_su_vela(tmp_path):
+    """Regresión anti-lookahead: el high de la vela que ejecuta la limitada suele
+    ocurrir ANTES del fill; no puede contarse como recorrido favorable posterior."""
+    store = CandleStore("test", base_dir=tmp_path)
+    end = START_MS + 60 * DAY_MS
+    store.save(SYMBOL, "1h", synth_candles(3_600_000, START_MS, end))
+    store.save(SYMBOL, "4h", synth_candles(14_400_000, START_MS, end))
+
+    # velas 5m planas y, el día del test a las 07:05 UTC, una vela roja enorme:
+    # abre en 100.5, marca high 102 (antes del fill) y cae a 97 cerrando en 97.5
+    mgmt = synth_candles(300_000, START_MS, end, p0=100.0, slope_per_day=0.0)
+    mgmt.loc[:, ["open", "high", "low", "close"]] = 100.0
+    mgmt["high"], mgmt["low"] = 100.05, 99.95
+    day_ts = START_MS + 40 * DAY_MS + int(7.083 * 3_600_000)  # 2026-02-10 ~07:05 UTC
+    idx = mgmt.index[mgmt["timestamp"] == mgmt.loc[(mgmt["timestamp"] - day_ts).abs().idxmin(), "timestamp"]][0]
+    mgmt.loc[idx, ["open", "high", "low", "close"]] = [100.5, 102.0, 97.0, 97.5]
+    store.save(SYMBOL, "5m", mgmt)
+
+    config = _config(mode="pullback_limit", pullback_pct=1.0, timeout_hours=6, on_timeout="cancel")
+    config.steps.basis = "price"
+    config.steps.step_pct = 2.0  # escalón en ~100.98: solo alcanzable por el high pre-fill (102)
+    config.stop.atr_mult = 10   # SL muy lejos: aísla el exploit del escalón
+
+    result = BacktestEngine(config, store=store).run(date(2026, 2, 10), date(2026, 2, 10))
+
+    assert result.metrics["entry_filled"] == 1
+    trade = result.trades[0]
+    # Con el bug, el high 102 (previo al fill) disparaba un 'step' en ~100.5 en la
+    # misma vela del fill. Corregido: esa vela solo se evalúa con su close (97.5),
+    # que ni toca escalón ni SL; el resto del día es plano -> solo open + cierre 'end'.
+    assert [f.kind for f in trade.fills] == ["open", "end"]
+    assert trade.steps_hit == 0
+
+
 def test_pullback_timeout_market_entra_igualmente(tmp_path):
     store = _store_with_synth(tmp_path)
     config = _config(mode="pullback_limit", pullback_pct=30.0, timeout_hours=4, on_timeout="market")
