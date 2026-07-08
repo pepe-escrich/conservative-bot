@@ -2,8 +2,12 @@
 
 exchange: okx                  # id de ccxt: okx, bingx, binance...
 
-# Catálogo de tokens (perpetuos USDT de OKX, formato ccxt).
-# Regenerar con: python -m bot universe --top 50  (top capitalización ∩ perps del exchange)
+# Catálogo: las 30 bases cripto con X-Perp en OKX EU producción (eea.okx.com).
+# En EU los perps estándar (SWAP) están bloqueados por compliance (error 51155, MiCA/MiFID);
+# solo son operables los X-Perps regulados (FUTURES, BASE-USD_UM_XPERP). Se representan como
+# BASE/USDT:USDT porque los X-Perps (~3 meses de histórico) no dan para backtest de 2 años:
+# indicadores y backtest usan el perp USDT como proxy del mismo subyacente. El broker mapea
+# a BASE-USD_UM_XPERP al ejecutar en producción (fase 2).
 universe:
   - BTC/USDT:USDT
   - ETH/USDT:USDT
@@ -17,44 +21,24 @@ universe:
   - ADA/USDT:USDT
   - XLM/USDT:USDT
   - LINK/USDT:USDT
-  - LAB/USDT:USDT
-  - CC/USDT:USDT
   - BCH/USDT:USDT
   - GRAM/USDT:USDT
   - LTC/USDT:USDT
-  - HBAR/USDT:USDT
   - SUI/USDT:USDT
   - AVAX/USDT:USDT
   - NEAR/USDT:USDT
-  - SHIB/USDT:USDT
   - TAO/USDT:USDT
-  - UNI/USDT:USDT
-  - WLFI/USDT:USDT
-  - ASTER/USDT:USDT
-  - ONDO/USDT:USDT
-  - DOT/USDT:USDT
   - AAVE/USDT:USDT
   - WLD/USDT:USDT
-  - SKY/USDT:USDT
-  - MORPHO/USDT:USDT
   - ICP/USDT:USDT
-  - PI/USDT:USDT
   - PEPE/USDT:USDT
-  - ETC/USDT:USDT
-  - QNT/USDT:USDT
-  - STABLE/USDT:USDT
   - RENDER/USDT:USDT
-  - ATOM/USDT:USDT
-  - POL/USDT:USDT
-  - ALGO/USDT:USDT
-  - JUP/USDT:USDT
   - BEAT/USDT:USDT
   - ENA/USDT:USDT
   - PUMP/USDT:USDT
   - LIT/USDT:USDT
-  - FIL/USDT:USDT
   - VVV/USDT:USDT
-  - NIGHT/USDT:USDT
+  - ONDO/USDT:USDT
 
 schedule:
   time: "07:00"                # hora local de lanzamiento de los trades diarios
@@ -125,6 +109,8 @@ paper:
   poll_seconds: 15
 
 execution:
-  mode: okx                    # 'paper' (simulado) u 'okx' (órdenes reales vía python-okx)
+  mode: paper                  # 'paper' (simulado) u 'okx' (X-Perps reales vía python-okx)
+  # Fase 2 (producción): mode: okx + product: xperp. Las claves demo de OKX EU no pueden
+  # operar perps estándar (51155); el broker mapea a X-Perps (FUTURES, BASE-USD_UM_XPERP).
   domain: https://eea.okx.com  # OKX Europa; global: https://www.okx.com
   demo: true                   # true = demo trading (flag 1). Keys en el fichero .env
