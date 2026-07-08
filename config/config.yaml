@@ -44,42 +44,43 @@ schedule:
   time: "07:00"                # hora local de lanzamiento de los trades diarios
   timezone: Europe/Madrid
 
-# --- Valores optimizados por el estudio Optuna del 2026-07-06 ---------------
-# (data/studies/study_20260706_2322.md · OOS: +27.9% en 29 días, DD 6.3%, PF 1.62)
-# Los valores originales del diseño (3 trades/día, 10x, escalones de 1% de PnL
-# sobre margen, RR 1:3) perdían dinero: las comisiones se comían los escalones.
+# --- Valores optimizados por el estudio Optuna del 2026-07-08 (2 años, 30 X-Perps) ---
+# (data/studies/study_20260708_2044.md · IS +672% / OOS +285% (2025-10→2026-07),
+#  wr 45%, PF 1.35, DD 32-37%). Auditoría sin bug (wr/PF modestos, fills realistas,
+#  sin lookahead). AVISO: el OOS es la MISMA tendencia alcista 2024-26 (no un régimen
+#  distinto) → los 285% son optimistas si el mercado gira; estrategia validada en alcista.
+#  Cambios vs estudio anterior (2026-07-06): entrada market, trailing previous_step,
+#  SL más ajustado (1.78 ATR), min_score estricto (0.579), pesos con ADX al alza.
 
-trades_per_day: 2              # nº de trades que se abren cada día
-min_score: 0.166               # puntuación mínima (|score|) para considerar un token
+trades_per_day: 3              # nº de trades que se abren cada día
+min_score: 0.579               # puntuación mínima (|score|) para considerar un token
 
 leverage: 3
 capital_inicial: 1000          # USDT, para paper y backtest
-risk_per_trade_pct: 1.86       # % del equity que se pierde si salta el SL inicial
+risk_per_trade_pct: 1.76       # % del equity que se pierde si salta el SL inicial
 
 sizing:
   mode: risk                   # 'risk' (por riesgo al SL) o 'capital_fraction' (% fijo del capital como margen)
   capital_fraction_pct: 10     # solo para capital_fraction: % del capital al inicio del día por trade
 
-risk_reward: 4.18              # TP a 4.18R
+risk_reward: 4.23              # TP a 4.23R
 
 entry:
-  # OOS jun-jul 2026: pullback 0.3% iguala el retorno de mercado (+27.4% vs +27.9%)
-  # con mejor PF (1.69 vs 1.62) y -42% de comisiones. Retrocesos mayores pierden
-  # los mejores trades (0.5% -> +12%, 1% -> +4.5%): no esperar mucho al momentum.
-  mode: pullback_limit         # 'market' o 'pullback_limit' (limitada a un retroceso)
-  pullback_pct: 0.3            # % de retroceso desde el precio de la señal
-  timeout_hours: 6             # validez de la orden limitada
+  # Estudio 2y: market entra mejor que pullback en el tramo alcista (no perder el momentum).
+  mode: market                 # 'market' o 'pullback_limit' (limitada a un retroceso)
+  pullback_pct: 1.06           # % de retroceso desde el precio de la señal (sólo pullback_limit)
+  timeout_hours: 22.5          # validez de la orden limitada (sólo pullback_limit)
   on_timeout: cancel           # 'cancel' o 'market' al expirar sin fill
 
 stop:
-  atr_mult: 2.99               # distancia del SL en múltiplos de ATR
+  atr_mult: 1.78               # distancia del SL en múltiplos de ATR
   atr_period: 14
 
 steps:                         # gestión por escalones de beneficio
   basis: price                 # 'margin_pnl' (% PnL sobre margen) o 'price' (% de precio)
-  step_pct: 5.9                # tamaño del escalón
-  partial_close_pct: 68.4      # % de la posición restante que se cierra en cada escalón
-  trail_mode: breakeven_only   # 'previous_step' o 'breakeven_only'
+  step_pct: 4.72               # tamaño del escalón
+  partial_close_pct: 75.4      # % de la posición restante que se cierra en cada escalón
+  trail_mode: previous_step    # 'previous_step' o 'breakeven_only'
 
 fees:
   taker_pct: 0.05              # comisión taker por fill (% del notional)
@@ -87,12 +88,12 @@ fees:
   slippage_pct: 0.02           # deslizamiento estimado por fill (% del precio)
 
 indicators:                    # pesos del scoring (se normalizan a suma 1)
-  ema_trend: 0.519
-  rsi: 0.866
-  macd: 0.975
-  adx: 0.154
-  bollinger: 0.747
-  frvp: 0.305
+  ema_trend: 0.577
+  rsi: 0.187
+  macd: 0.431
+  adx: 0.635
+  bollinger: 0.088
+  frvp: 0.207
 
 timeframes:
   signal: 1h                   # indicadores de señal
