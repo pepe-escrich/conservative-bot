@@ -112,7 +112,7 @@ def suggest_overrides(trial: optuna.Trial) -> dict:
     return {
         "trades_per_day": trial.suggest_int("trades_per_day", 1, 5),
         "min_score": round(trial.suggest_float("min_score", 0.1, 0.6), 3),
-        "leverage": trial.suggest_categorical("leverage", [3, 5, 10, 15, 20]),
+        "leverage": trial.suggest_categorical("leverage", [3, 5, 10]),  # X-Perps OKX EU: máximo 10x
         "risk_per_trade_pct": round(trial.suggest_float("risk_per_trade_pct", 0.5, 2.0), 2),
         "risk_reward": round(trial.suggest_float("risk_reward", 1.5, 6.0), 2),
         "entry": {
