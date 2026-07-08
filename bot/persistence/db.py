@@ -93,6 +93,12 @@ CREATE INDEX IF NOT EXISTS idx_equity_run ON equity_snapshots(run_id, time);
 
 
 class Database:
+    """Una única conexión SQLite compartida entre hilos (API, runner, backtests).
+
+    sqlite3 no tolera llamadas concurrentes sobre la misma conexión ni siquiera
+    de solo lectura: TODO acceso pasa por el lock (`_rows`/`_row` para lecturas).
+    """
+
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path) if path else DATA_DIR / "bot.db"
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +108,14 @@ class Database:
         with self._lock:
             self.conn.executescript(SCHEMA)
             self.conn.commit()
+
+    def _rows(self, sql: str, params=()) -> list[sqlite3.Row]:
+        with self._lock:
+            return self.conn.execute(sql, params).fetchall()
+
+    def _row(self, sql: str, params=()) -> sqlite3.Row | None:
+        with self._lock:
+            return self.conn.execute(sql, params).fetchone()
 
     # ------------------------------------------------------------------
     # Runs de backtest
@@ -125,13 +139,10 @@ class Database:
             self.conn.commit()
 
     def get_runs(self, limit: int = 50) -> list[dict]:
-        rows = self.conn.execute(
-            "SELECT * FROM backtest_runs ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r) for r in self._rows("SELECT * FROM backtest_runs ORDER BY id DESC LIMIT ?", (limit,))]
 
     def get_run(self, run_id: int) -> dict | None:
-        row = self.conn.execute("SELECT * FROM backtest_runs WHERE id = ?", (run_id,)).fetchone()
+        row = self._row("SELECT * FROM backtest_runs WHERE id = ?", (run_id,))
         return dict(row) if row else None
 
     def delete_run(self, run_id: int) -> None:
@@ -222,13 +233,10 @@ class Database:
             params.append(symbol)
         query += " ORDER BY entry_time DESC LIMIT ?"
         params.append(limit)
-        return [dict(r) for r in self.conn.execute(query, params).fetchall()]
+        return [dict(r) for r in self._rows(query, params)]
 
     def get_fills(self, trade_id: int) -> list[dict]:
-        rows = self.conn.execute(
-            "SELECT * FROM fills WHERE trade_id = ? ORDER BY time", (trade_id,)
-        ).fetchall()
-        return [dict(r) for r in rows]
+        return [dict(r) for r in self._rows("SELECT * FROM fills WHERE trade_id = ? ORDER BY time", (trade_id,))]
 
     # ------------------------------------------------------------------
     # Equity y scores
@@ -244,14 +252,14 @@ class Database:
 
     def get_equity_curve(self, mode: str, run_id: int | None = None, since_ms: int | None = None) -> list[dict]:
         if run_id is not None:
-            rows = self.conn.execute(
+            rows = self._rows(
                 "SELECT time, equity FROM equity_snapshots WHERE run_id = ? ORDER BY time", (run_id,)
-            ).fetchall()
+            )
         else:
-            rows = self.conn.execute(
+            rows = self._rows(
                 "SELECT time, equity FROM equity_snapshots WHERE mode = ? AND run_id IS NULL AND time >= ? ORDER BY time",
                 (mode, since_ms or 0),
-            ).fetchall()
+            )
         return [dict(r) for r in rows]
 
     def save_scores(
@@ -273,7 +281,7 @@ class Database:
     # ------------------------------------------------------------------
 
     def get_state(self, key: str, default: str | None = None) -> str | None:
-        row = self.conn.execute("SELECT value FROM bot_state WHERE key = ?", (key,)).fetchone()
+        row = self._row("SELECT value FROM bot_state WHERE key = ?", (key,))
         return row["value"] if row else default
 
     def set_state(self, key: str, value) -> None:
@@ -299,7 +307,7 @@ class Database:
             self.conn.commit()
 
     def get_prices(self) -> dict[str, float]:
-        rows = self.conn.execute("SELECT symbol, price FROM last_prices").fetchall()
+        rows = self._rows("SELECT symbol, price FROM last_prices")
         return {r["symbol"]: r["price"] for r in rows}
 
     def load_open_trades(self, mode: str = "paper") -> list[Trade]:
@@ -337,20 +345,20 @@ class Database:
         return trades
 
     def total_realized_pnl(self, mode: str = "paper", since_ms: int | None = None) -> float:
-        row = self.conn.execute(
+        row = self._row(
             "SELECT COALESCE(SUM(realized_pnl), 0) AS s FROM trades"
             " WHERE mode = ? AND run_id IS NULL AND entry_time >= ?",
             (mode, since_ms or 0),
-        ).fetchone()
+        )
         return row["s"]
 
     def get_recent_fills(self, mode: str, since_ms: int) -> list[dict]:
         """Fills (con símbolo) desde un instante, para PnL del día. Solo paper/live (run_id NULL)."""
-        rows = self.conn.execute(
+        rows = self._rows(
             "SELECT f.*, t.symbol, t.side FROM fills f JOIN trades t ON t.id = f.trade_id"
             " WHERE t.mode = ? AND t.run_id IS NULL AND f.time >= ? ORDER BY f.time",
             (mode, since_ms),
-        ).fetchall()
+        )
         return [dict(r) for r in rows]
 
     def get_scores(self, date: str | None = None, mode: str = "paper", run_id: int | None = None) -> list[dict]:
@@ -363,4 +371,4 @@ class Database:
             query += " AND date = ?"
             params.append(date)
         query += " ORDER BY date DESC, ABS(score) DESC LIMIT 500"
-        return [dict(r) for r in self.conn.execute(query, params).fetchall()]
+        return [dict(r) for r in self._rows(query, params)]
