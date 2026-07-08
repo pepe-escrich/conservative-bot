@@ -2,13 +2,13 @@
 
 Bot de trading de perpetuos cripto con operativa diaria sencilla:
 
-- **3 trades al día** (configurable) a las **07:00** (configurable, Europe/Madrid), LONG o SHORT, **10x**.
-- Puntúa el catálogo de tokens con indicadores (EMA, RSI, MACD, ADX, Bollinger) + **FRVP** y abre los N con mayor puntuación.
-- Setup **1:3** (configurable): SL por ATR, TP a 3R.
-- **Gestión por escalones**: cada +1% de PnL sobre el margen → SL a breakeven (luego trailing) y cierre del 50% restante, hasta que salte el SL o llegue al TP.
-- **Backtest** con comisiones y slippage, **paper trading** en tiempo real (OKX, datos públicos, sin API keys) y **dashboard web** (React).
+- **N trades al día** (configurable, hoy 3) a las **07:00** (Europe/Madrid), LONG o SHORT, leverage configurable (hoy 3x).
+- Puntúa el catálogo de tokens con indicadores (EMA, RSI, MACD, ADX, Bollinger) + **FRVP** y abre los de mayor puntuación (umbral `min_score`).
+- SL por ATR, TP a `risk_reward`·R (hoy 4,23R).
+- **Gestión por escalones** de precio: cada +`step_pct`% cierra `partial_close_pct`% y arrastra el SL (breakeven o escalón anterior) hasta que salte el SL o llegue al TP.
+- **Backtest** con comisiones y slippage, **paper trading** en tiempo real (datos públicos de ccxt, sin API keys) y **dashboard web** (React). Parámetros afinados por Optuna (validación IS/OOS).
 
-> ⚠️ A 10x, un escalón del 1% de PnL equivale a 0,1% de precio; las comisiones taker de ida y vuelta (~0,1% del notional) consumen ~1% del margen. Usa el backtest para validar los parámetros antes de creerte nada.
+> ⚠️ Los valores por defecto vienen de un estudio Optuna sobre 2 años (ver `config.yaml` y `data/studies/`). Valida siempre con backtest antes de creerte nada; un escalón demasiado fino se lo comen las comisiones.
 
 ## Estructura
 
@@ -47,26 +47,27 @@ cd web && npm install && npm run dev              # frontend en http://localhost
 
 Para el **paper trading**, pon `paper.enabled: true` en `config/config.yaml` y arranca la API: el bot puntuará y abrirá trades cada día a la hora configurada, gestionándolos con precios reales.
 
-## Conexión con la cuenta demo de OKX
+## Modos de ejecución
 
-La ejecución real (demo o live) usa el SDK oficial `python-okx` contra **OKX Europa**
-(`eea.okx.com`); se controla en `config.yaml`:
+El bot tiene dos modos (`execution.mode` en `config.yaml`):
 
-```yaml
-execution:
-  mode: okx     # 'paper' = simulado interno; 'okx' = órdenes reales
-  domain: https://eea.okx.com
-  demo: true    # demo trading (flag 1)
-```
+- **`paper`** (default, recomendado para validar): trading simulado contra datos
+  públicos de ccxt (sin API keys, sin cuenta). Misma estrategia y universo que en
+  producción. Así está configurado ahora.
+- **`okx`**: órdenes reales vía el SDK oficial `python-okx` contra OKX Europa
+  (`eea.okx.com`), cuenta demo o real según `execution.demo`.
 
-1. Crea una API key de **demo trading** en OKX (permiso *Trade*).
-2. `cp .env.example .env` y rellena `OKX_API_KEY`, `OKX_API_SECRET`, `OKX_API_PASSPHRASE`.
-3. Arranca la web y usa el panel del dashboard: **Iniciar bot** (con el % de capital
-   por trade), **Parar** (pregunta si cerrar posiciones) y **Reset** (nuevo capital de
-   referencia + limpieza de KPIs; el saldo demo real se recarga desde la web de OKX).
+> ⚠️ **OKX EU bloquea los perps estándar (error 51155, MiCA/MiFID)**: la cuenta de OKX
+> Europa **no puede operar perpetuals SWAP** (USDT/USD/USDC). Solo son operables los
+> **X-Perps** regulados (`instType=FUTURES`, instId `BASE-USD_UM_XPERP`, USD-margined).
+> El broker (`bot/engine/okx_broker.py`) aún mapea a SWAP; para ejecución real hay que
+> adaptarlo a X-Perps (fase 2) y pasar el test de idoneidad MiFID en la cuenta real.
+> Mientras tanto el bot corre en `paper` (fiel: universo de 30 X-Perps + datos USDT-perp
+> como proxy del mismo subyacente).
 
-Nota: los perps lineales de OKX (también en la entidad europea) liquidan en USDT;
-el "USD-M" de OKX EU significa que puedes usar USDC/USD como colateral de margen.
+Para `paper`: arranca la web y usa el panel — **Iniciar bot** (% de capital por trade),
+**Parar** (pregunta si cerrar posiciones), **Reset** (nuevo capital de referencia +
+KPIs). No requiere claves OKX (`.env` puede llevar las variables vacías).
 
 ## Despliegue en Hetzner Cloud
 
