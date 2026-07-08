@@ -61,6 +61,24 @@ def test_start_valida_porcentaje(client):
     assert client.post("/api/bot/start", json={"capital_fraction_pct": 150}).status_code == 400
 
 
+def test_run_now_requiere_bot_en_marcha(client):
+    assert client.post("/api/bot/run-now").status_code == 400
+    client.post("/api/bot/start", json={"capital_fraction_pct": 5})
+    assert client.post("/api/bot/run-now").json()["triggered"] is True
+    assert client.post("/api/bot/run-now?entry=market").json()["entry"] == "market"
+    assert client.post("/api/bot/run-now?entry=lo-que-sea").status_code == 400
+    client.post("/api/bot/stop", json={"close_positions": False})
+
+
+def test_equity_es_la_banca_no_el_saldo_real(client):
+    """El capital de trabajo del bot es referencia + PnL desde reset (no el saldo demo)."""
+    from bot.engine.runner import BotRunner
+
+    client.post("/api/account/reset", json={"reference_amount": 1000})
+    runner = BotRunner(client.app.state.config, client.app.state.db)
+    assert runner.equity() == pytest.approx(1000.0)
+
+
 def test_reset_fija_referencia_y_baseline(client):
     db = client.app.state.db
     r = client.post("/api/account/reset", json={"reference_amount": 500}).json()

@@ -55,8 +55,13 @@ def score_token(symbol: str, ctx: SignalContext) -> TokenScore:
     return TokenScore(symbol=symbol, score=composite / total_weight, breakdown=breakdown)
 
 
-def rank_tokens(scores: list[TokenScore], config: BotConfig) -> list[TokenScore]:
-    """Filtra por puntuación mínima y devuelve los mejores candidatos del día."""
+def eligible_tokens(scores: list[TokenScore], config: BotConfig) -> list[TokenScore]:
+    """Todos los candidatos que pasan el umbral, ordenados de mejor a peor."""
     eligible = [s for s in scores if abs(s.score) >= config.min_score]
     eligible.sort(key=lambda s: abs(s.score), reverse=True)
-    return eligible[: config.trades_per_day]
+    return eligible
+
+
+def rank_tokens(scores: list[TokenScore], config: BotConfig) -> list[TokenScore]:
+    """Filtra por puntuación mínima y devuelve los mejores candidatos del día."""
+    return eligible_tokens(scores, config)[: config.trades_per_day]

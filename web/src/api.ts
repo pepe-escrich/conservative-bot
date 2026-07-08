@@ -157,6 +157,7 @@ export const api = {
     send<{ running: boolean; closed_trades: number }>("POST", "/api/bot/stop", { close_positions }),
   resetAccount: (reference_amount: number | null, close_positions: boolean) =>
     send<{ reference_capital: number }>("POST", "/api/account/reset", { reference_amount, close_positions }),
+  runNow: () => send<{ triggered: boolean }>("POST", "/api/bot/run-now"),
   runs: () => get<Run[]>("/api/backtests"),
   launchBacktest: (body: { date_from: string; date_to: string; overrides: Record<string, unknown> }) =>
     send<{ run_id: number }>("POST", "/api/backtests", body),

@@ -30,7 +30,7 @@ from bot.data.store import CandleStore
 from bot.indicators.base import SignalContext
 from bot.indicators.classic import atr as atr_series
 from bot.persistence.db import Database
-from bot.scoring.scorer import rank_tokens, score_token
+from bot.scoring.scorer import eligible_tokens, score_token
 from bot.strategy.manager import StepLadderManager
 from bot.strategy.models import OPEN, PendingEntry, Trade
 from bot.strategy.setup import build_trade, side_from_score, trade_from_execution
@@ -82,12 +82,18 @@ class BotRunner:
         return self.config
 
     def equity(self) -> float:
-        """Equity para el sizing: saldo real de la cuenta (okx) o contable (paper)."""
-        if self.live:
-            return self.broker.balance()["total_eq_usd"]
+        """Capital de trabajo del bot (banca): capital de referencia + PnL desde el
+        último reset. En ejecución OKX se limita además al saldo real de la cuenta
+        — la demo puede tener 400k $, pero el bot opera solo con su banca."""
         baseline = self.db.baseline_ms()
         reference = float(self.db.get_state("reference_capital", str(self.config.capital_inicial)))
-        return reference + self.db.total_realized_pnl("paper", since_ms=baseline)
+        bankroll = reference + self.db.total_realized_pnl("paper", since_ms=baseline)
+        if self.live:
+            try:
+                return min(bankroll, self.broker.balance()["total_eq_usd"])
+            except Exception as e:
+                log.warning("bot: no se pudo leer el saldo real (%s); uso la banca contable", e)
+        return bankroll
 
     def _last_prices(self, symbols: list[str]) -> dict[str, float]:
         if self.live:
@@ -141,14 +147,35 @@ class BotRunner:
     # Job diario: scoring y entradas
     # ------------------------------------------------------------------
 
-    def daily_job(self) -> None:
+    def daily_job(self, entry_override: str | None = None) -> None:
+        """Ciclo completo de apertura. `entry_override` ('market'|'pullback_limit')
+        permite forzar el modo de entrada en ejecuciones manuales de prueba."""
         cfg = self.effective_config
+        if entry_override:
+            cfg = with_overrides(cfg, {"entry": {"mode": entry_override}})
         now_ms = int(time.time() * 1000)
+
+        # el entorno demo de OKX tiene un catálogo reducido: solo puntuar lo operable
+        available_prices: dict[str, float] | None = None
+        if self.live:
+            try:
+                available_prices = self._last_prices(cfg.universe)
+                missing = [s for s in cfg.universe if s not in available_prices]
+                if missing:
+                    log.info(
+                        "bot: %d/%d tokens sin mercado en este entorno (p. ej. %s)",
+                        len(missing), len(cfg.universe), ", ".join(m.split("/")[0] for m in missing[:6]),
+                    )
+            except Exception as e:
+                log.warning("bot: no se pudieron leer los tickers (%s)", e)
+
         log.info("bot: job diario, actualizando velas y puntuando %d tokens", len(cfg.universe))
 
         scores = []
         atrs: dict[str, float] = {}
         for symbol in cfg.universe:
+            if available_prices is not None and symbol not in available_prices:
+                continue
             try:
                 signal_df = self.store.update(
                     self.exchange, symbol, cfg.timeframes.signal, now_ms - 45 * DAY_MS, now_ms
@@ -166,13 +193,21 @@ class BotRunner:
             atrs[symbol] = float(atr_series(signal_df.tail(500), cfg.stop.atr_period).iloc[-1])
 
         busy = {t.symbol for t in self.open_trades} | {p.symbol for p in self.pending}
-        candidates = [s for s in rank_tokens(scores, cfg) if s.symbol not in busy]
-        prices = self._last_prices([c.symbol for c in candidates]) if candidates else {}
+        candidates = [s for s in eligible_tokens(scores, cfg) if s.symbol not in busy]
+        if available_prices is not None:
+            prices = available_prices
+        else:
+            prices = self._last_prices([c.symbol for c in candidates]) if candidates else {}
 
+        # recorre el ranking completo hasta abrir trades_per_day (si un candidato
+        # no es operable se pasa al siguiente, en vez de quedarse sin operar)
         opened = set()
         for cand in candidates:
+            if len(opened) >= cfg.trades_per_day:
+                break
             price = prices.get(cand.symbol)
             if not price or cand.symbol not in atrs:
+                log.info("bot: %s sin precio operable, paso al siguiente candidato", cand.symbol)
                 continue
             try:
                 if self._enter(cfg, cand.symbol, side_from_score(cand.score), price, atrs[cand.symbol], cand.score, now_ms):

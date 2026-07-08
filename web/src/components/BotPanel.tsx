@@ -46,6 +46,11 @@ export default function BotPanel() {
     onSuccess: onOk,
     onError: onErr,
   });
+  const runNow = useMutation({
+    mutationFn: api.runNow,
+    onSuccess: () => setTimeout(refresh, 3000),  // dar tiempo a que abra los trades
+    onError: onErr,
+  });
 
   if (!acc) return null;
   const running = acc.running;
@@ -56,16 +61,16 @@ export default function BotPanel() {
       <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
         <div>
           <div className="text-xs uppercase tracking-wide text-slate-500">
-            {acc.execution_mode === "okx" ? `Cuenta OKX ${acc.demo ? "(demo)" : "(REAL)"}` : "Modo paper interno"}
+            Capital del bot {acc.execution_mode === "okx" ? (acc.demo ? "· OKX demo" : "· OKX REAL") : "· paper"}
           </div>
-          <div className="text-2xl font-semibold mt-0.5">
-            {acc.execution_mode === "okx" ? (acc.balance != null ? fmtUsd(acc.balance) : "sin conexión") : fmtUsd(acc.bot_equity)}
+          <div className="text-2xl font-semibold mt-0.5">{fmtUsd(acc.bot_equity)}</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            {acc.execution_mode === "okx"
+              ? acc.balance != null
+                ? `saldo demo total ${fmtUsd(acc.balance)} — el bot solo opera con su capital`
+                : "sin conexión con OKX"
+              : "modo simulado interno"}
           </div>
-          {acc.balance_details && (
-            <div className="text-xs text-slate-500 mt-0.5">
-              {Object.entries(acc.balance_details).map(([ccy, eq]) => `${ccy} ${eq.toLocaleString("es-ES")}`).join(" · ")}
-            </div>
-          )}
           {acc.balance_error && <div className="text-xs text-red-400 mt-0.5" title={acc.balance_error}>error leyendo saldo (¿keys en .env?)</div>}
         </div>
         <div>
@@ -87,9 +92,19 @@ export default function BotPanel() {
         </div>
         <div className="ml-auto flex gap-2">
           {running ? (
-            <button className={`${btn} bg-red-600/80 hover:bg-red-500 text-white`} onClick={() => setModal("stop")}>
-              Parar bot
-            </button>
+            <>
+              <button
+                className={`${btn} bg-sky-700 hover:bg-sky-600 text-white`}
+                title="Ejecuta ya el ciclo diario (scoring + apertura de trades)"
+                onClick={() => runNow.mutate()}
+                disabled={runNow.isPending}
+              >
+                {runNow.isPending ? "Ejecutando…" : "Ciclo ahora"}
+              </button>
+              <button className={`${btn} bg-red-600/80 hover:bg-red-500 text-white`} onClick={() => setModal("stop")}>
+                Parar bot
+              </button>
+            </>
           ) : (
             <button className={`${btn} bg-emerald-600 hover:bg-emerald-500 text-white`} onClick={() => setModal("start")}>
               Iniciar bot

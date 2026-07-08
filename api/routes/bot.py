@@ -105,6 +105,28 @@ def stop_bot(request: Request, body: StopRequest):
     return {"running": False, "closed_trades": closed}
 
 
+@router.post("/bot/run-now")
+def run_now(request: Request, entry: str | None = None):
+    """Ejecuta ya el ciclo diario (scoring + apertura). Para pruebas: ?entry=market
+    fuerza entrada a mercado aunque la config use pullback."""
+    import threading
+
+    runner = _runner(request)
+    if runner is None:
+        raise HTTPException(400, "el bot no está en marcha")
+    if entry not in (None, "market", "pullback_limit"):
+        raise HTTPException(400, "entry debe ser market o pullback_limit")
+
+    def _run():
+        try:
+            runner.daily_job(entry_override=entry)
+        except Exception:
+            log.exception("run-now: el ciclo falló")
+
+    threading.Thread(target=_run, daemon=True, name="run-now").start()
+    return {"triggered": True, "entry": entry or "config"}
+
+
 @router.post("/account/reset")
 def reset_account(request: Request, body: ResetRequest):
     """Resetea los KPIs del bot: fija un nuevo capital de referencia y baseline.
